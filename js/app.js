@@ -969,8 +969,6 @@ function showNewOrderNotification() {
     
     shopSelection.style.display = 'flex';
 }
-
-
         async function showMenuPage() {
             setHeaderVisibility(true);
             showLoading('Loading menu...');
@@ -979,10 +977,14 @@ function showNewOrderNotification() {
 
     if (!currentShop) return;
 
-    if (currentShop.suspended) {
-        showSuspendedShopCustomerView();
+    if (
+    currentShop.plan === 'paid' &&
+    currentShop.subscription_status === 'offline'
+    ) {
+        showSubscriptionOfflineCustomerView();
         return;
     }
+
     
     if (currentShop.temporary_closed) {
         showTemporarilyClosedMessage();
@@ -1134,10 +1136,19 @@ function showNewOrderNotification() {
                 <div class="food-card" data-category="${item.category}" data-item-id="${item.id}">
     ${item.badge ? `<div class="food-badge">${item.badge}</div>` : ''}
     <div class="food-image">
-        ${item.image_url ? 
-            `<img src="${item.image_url}" alt="${item.name}" loading="lazy" />` :
-            `<i class="fas fa-utensils"></i>`
-        }
+
+    ${
+        currentShop.plan === 'paid' &&
+        item.image_url
+
+            ? `<img
+                    src="${item.image_url}"
+                    alt="${item.name}"
+                    loading="lazy"
+               />`
+
+            : `<i class="fas fa-utensils"></i>`
+    }
             <div class="time-estimate">
                 <span>${item.preparation_time || '15-20'} min</span>
             </div>
@@ -1826,247 +1837,6 @@ function applyShopColors(shop) {
     
     updateHeaderText(shop);
 }
-
-
-        function showSuspendedShopCustomerView() {
-    setHeaderVisibility(true);
-    
-    const mainContent = document.getElementById('main-content');
-    mainContent.innerHTML = `
-        <style>
-            .offline-container {
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                min-height: calc(100vh - 140px);
-                padding: 20px;
-                margin-top: 15px;
-                animation: fadeInOffline 0.5s ease;
-            }
-            
-            @keyframes fadeInOffline {
-                from { opacity: 0; transform: translateY(20px); }
-                to { opacity: 1; transform: translateY(0); }
-            }
-            
-            .offline-card {
-                background: white;
-                border-radius: 32px;
-                padding: 40px 32px;
-                max-width: 420px;
-                width: 100%;
-                text-align: center;
-                border: 1px solid #f0f0f0;
-                box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
-            }
-            
-            .offline-icon {
-                width: 100px;
-                height: 100px;
-                background: linear-gradient(135deg, #f8f9fa, #e9ecef);
-                border-radius: 50%;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                margin: 0 auto 24px;
-            }
-            
-            .offline-icon i {
-                font-size: 48px;
-                color: #94a3b8;
-            }
-            
-            .offline-card h2 {
-                font-size: 24px;
-                font-weight: 700;
-                margin: 0 0 12px;
-                color: #1e293b;
-            }
-            
-            .offline-card p {
-                color: #64748b;
-                font-size: 15px;
-                line-height: 1.5;
-                margin: 0 0 8px;
-            }
-            
-            .shop-details {
-                background: #f8fafc;
-                border-radius: 20px;
-                padding: 20px;
-                margin: 24px 0;
-                text-align: left;
-            }
-            
-            .shop-detail-item {
-                display: flex;
-                align-items: center;
-                gap: 12px;
-                margin-bottom: 16px;
-            }
-            
-            .shop-detail-item:last-child {
-                margin-bottom: 0;
-            }
-            
-            .shop-detail-icon {
-                width: 40px;
-                height: 40px;
-                background: white;
-                border-radius: 50%;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-            }
-            
-            .shop-detail-icon i {
-                font-size: 18px;
-                color: var(--primary);
-            }
-            
-            .shop-detail-content {
-                flex: 1;
-            }
-            
-            .shop-detail-label {
-                font-size: 11px;
-                color: #94a3b8;
-                text-transform: uppercase;
-                letter-spacing: 0.5px;
-                margin-bottom: 2px;
-            }
-            
-            .shop-detail-value {
-                font-size: 14px;
-                font-weight: 500;
-                color: #1e293b;
-            }
-            
-            .visit-store-btn {
-                background: linear-gradient(135deg, var(--primary), var(--secondary));
-                color: white;
-                border: none;
-                padding: 14px 24px;
-                border-radius: 40px;
-                font-weight: 600;
-                font-size: 15px;
-                cursor: pointer;
-                display: inline-flex;
-                align-items: center;
-                gap: 10px;
-                transition: all 0.2s;
-                margin: 8px 0;
-                text-decoration: none;
-            }
-            
-            .visit-store-btn:hover {
-                transform: translateY(-2px);
-                box-shadow: 0 8px 20px rgba(255, 123, 49, 0.25);
-            }
-            
-            .message-box {
-                background: #f1f5f9;
-                border-radius: 16px;
-                padding: 16px;
-                margin-top: 20px;
-                text-align: center;
-            }
-            
-            .message-box i {
-                color: var(--primary);
-                margin-right: 8px;
-            }
-            
-            .message-box p {
-                margin: 0;
-                font-size: 13px;
-                color: #475569;
-            }
-            
-            @media (max-width: 480px) {
-                .offline-card {
-                    padding: 32px 24px;
-                }
-                
-                .offline-icon {
-                    width: 80px;
-                    height: 80px;
-                }
-                
-                .offline-icon i {
-                    font-size: 38px;
-                }
-                
-                .offline-card h2 {
-                    font-size: 22px;
-                }
-            }
-        </style>
-        
-        <div class="offline-container">
-            <div class="offline-card">
-                <div class="offline-icon">
-                    <i class="fas fa-store"></i>
-                </div>
-                
-                <h2>Currently Unavailable</h2>
-                <p>This shop is not accepting online orders at the moment</p>
-                
-                <div class="shop-details">
-                    <div class="shop-detail-item">
-                        <div class="shop-detail-icon">
-                            <i class="fas fa-store"></i>
-                        </div>
-                        <div class="shop-detail-content">
-                            <div class="shop-detail-label">Shop</div>
-                            <div class="shop-detail-value">${escapeHtml(currentShop.name)}</div>
-                        </div>
-                    </div>
-                    
-                    ${currentShop.phone_number ? `
-                        <div class="shop-detail-item">
-                            <div class="shop-detail-icon">
-                                <i class="fas fa-phone-alt"></i>
-                            </div>
-                            <div class="shop-detail-content">
-                                <div class="shop-detail-label">Contact</div>
-                                <div class="shop-detail-value">${escapeHtml(currentShop.phone_number)}</div>
-                            </div>
-                        </div>
-                    ` : ''}
-                    
-                    ${currentShop.address ? `
-                        <div class="shop-detail-item">
-                            <div class="shop-detail-icon">
-                                <i class="fas fa-map-marker-alt"></i>
-                            </div>
-                            <div class="shop-detail-content">
-                                <div class="shop-detail-label">Address</div>
-                                <div class="shop-detail-value">${escapeHtml(currentShop.address)}</div>
-                            </div>
-                        </div>
-                    ` : ''}
-                </div>
-                
-                ${currentShop.phone_number ? `
-                    <a href="tel:${currentShop.phone_number}" class="visit-store-btn">
-                        <i class="fas fa-phone-alt"></i>
-                        Call Shop
-                    </a>
-                ` : ''}
-                
-                <div class="message-box">
-                    <i class="fas fa-info-circle"></i>
-                    <p>For assistance, please contact the shop directly or visit our physical location.</p>
-                </div>
-            </div>
-        </div>
-    `;
-    
-    document.getElementById('bottom-nav').style.display = 'flex';
-}
-
         async function loadDevAdminDashboard() {
             setHeaderVisibility(false);
             const dashboard = document.getElementById('dev-admin-dashboard');
@@ -2245,8 +2015,33 @@ function applyShopColors(shop) {
                                     <input type="text" class="form-input menu-item-category" placeholder="Burgers">
                                 </div>
                                 <div class="form-group">
-                                    <label class="form-label">Image URL</label>
-                                    <input type="text" class="form-input menu-item-image" placeholder="https://images.unsplash.com/photo-...">
+                                    <label class="form-label">
+                                        Menu Image
+                                    </label>
+
+                                    <input
+                                        type="file"
+                                        class="form-input"
+                                        id="new-item-image"
+                                        accept=".jpg,image/jpeg"
+                                    >
+
+                                    <small style="
+                                        display: block;
+                                        margin-top: 6px;
+                                        color: #666;
+                                        line-height: 1.5;
+                                    ">
+                                        JPG only. Maximum size: 300 KB.
+                                        If your image is too large,
+                                        <a
+                                            href="https://imagecompressor.com/"
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                        >
+                                            compress your image here
+                                        </a>.
+                                    </small>
                                 </div>
                                 <div class="form-group">
                                     <label class="form-label">Badge (Optional)</label>
@@ -2897,6 +2692,80 @@ function updateColorPreview() {
             }
         }
 
+        function getDevShopSubscriptionBadge(shop) {
+
+    if (shop.plan === 'free') {
+        return `
+            <span style="
+                display: inline-block;
+                margin-left: 8px;
+                padding: 4px 9px;
+                border-radius: 20px;
+                background: #f1f5f9;
+                color: #475569;
+                font-size: 0.7rem;
+                font-weight: 700;
+            ">
+                FREE
+            </span>
+        `;
+    }
+
+    const status =
+        String(
+            shop.subscription_status || 'active'
+        ).toLowerCase();
+
+    if (status === 'offline') {
+        return `
+            <span style="
+                display: inline-block;
+                margin-left: 8px;
+                padding: 4px 9px;
+                border-radius: 20px;
+                background: #fee2e2;
+                color: #b91c1c;
+                font-size: 0.7rem;
+                font-weight: 700;
+            ">
+                PAID • OFFLINE
+            </span>
+        `;
+    }
+
+    if (status === 'overdue') {
+        return `
+            <span style="
+                display: inline-block;
+                margin-left: 8px;
+                padding: 4px 9px;
+                border-radius: 20px;
+                background: #fef3c7;
+                color: #92400e;
+                font-size: 0.7rem;
+                font-weight: 700;
+            ">
+                PAID • OVERDUE
+            </span>
+        `;
+    }
+
+    return `
+        <span style="
+            display: inline-block;
+            margin-left: 8px;
+            padding: 4px 9px;
+            border-radius: 20px;
+            background: #dcfce7;
+            color: #15803d;
+            font-size: 0.7rem;
+            font-weight: 700;
+        ">
+            PAID • ACTIVE
+        </span>
+    `;
+}
+
         async function loadAllShops() {
     const { data: shops, error } = await supabase
         .from('shops')
@@ -2914,9 +2783,12 @@ function updateColorPreview() {
     shopsList.innerHTML = shops.map(shop => `
         <div class="shop-item-admin">
             <div style="flex: 1;">
+            <div style="margin-bottom: 5px;">
                 <strong>${shop.name}</strong>
-                ${shop.suspended ? '<span style="color: red; margin-left: 10px;">[SUSPENDED]</span>' : ''}<br>
-                <small>${shop.address}</small><br>
+                ${getDevShopSubscriptionBadge(shop)}
+            </div>
+
+            <small>${shop.address}</small><br>
                 <small>${shop.phone_number} • ${shop.email}</small>
                 <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
                     <div style="display: flex; align-items: center; gap: 5px;">
@@ -2936,9 +2808,6 @@ function updateColorPreview() {
             <div style="display: flex; gap: 10px;">
                 <button class="btn-secondary" onclick="editShopColors(${shop.id})">
                     <i class="fas fa-palette"></i> Edit Colors
-                </button>
-                <button class="btn-secondary" onclick="toggleShopSuspension(${shop.id}, ${!shop.suspended})">
-                    ${shop.suspended ? 'Unsuspend' : 'Suspend'}
                 </button>
                 <button class="btn-danger" onclick="deleteShop(${shop.id})">Delete</button>
             </div>
@@ -3117,30 +2986,6 @@ async function saveShopColors(shopId) {
     }
 }
 
-window.toggleShopSuspension = async function(shopId, suspend) {
-    const action = suspend ? 'suspend' : 'unsuspend';
-    
-    if (!confirm(`Are you sure you want to ${action} this shop?`)) {
-        return;
-    }
-    
-    try {
-        const { error } = await supabase
-            .from('shops')
-            .update({ suspended: suspend })
-            .eq('id', shopId);
-        
-        if (error) throw error;
-        
-        alert(`Shop ${action}ed successfully!`);
-        await loadAllShops();
-        
-    } catch (error) {
-        console.error(`Error ${action}ing shop:`, error);
-        alert(`Error ${action}ing shop: ` + error.message);
-    }
-};
-
         async function loadAllCustomers() {
             const { data: registrations, error } = await supabase
                 .from('customer_registrations')
@@ -3207,7 +3052,8 @@ window.toggleShopSuspension = async function(shopId, suspend) {
             const description = document.getElementById('new-item-desc').value;
             const price = parseFloat(document.getElementById('new-item-price').value);
             const category = document.getElementById('new-item-category').value;
-            const imageUrl = document.getElementById('new-item-image').value;
+            const imageInput = document.getElementById('new-item-image');
+            const imageFile = imageInput.files?.[0] || null;
             const badge = document.getElementById('new-item-badge').value;
             const rating = document.getElementById('new-item-rating').value ? parseFloat(document.getElementById('new-item-rating').value) : null;
             const preparationTime = document.getElementById('new-item-prep-time').value;
@@ -3216,6 +3062,24 @@ window.toggleShopSuspension = async function(shopId, suspend) {
                 alert('Shop, name, price, and category are required');
                 return;
             }
+
+            if (imageFile) {
+
+            if (
+                imageFile.type !== 'image/jpeg' ||
+                !imageFile.name.toLowerCase().endsWith('.jpg')
+            ) {
+                alert('Only JPG menu images are allowed.');
+                return;
+            }
+
+            if (imageFile.size > 300 * 1024) {
+                alert(
+                    'Your image exceeds the 300 KB size limit. Compress your image here: https://imagecompressor.com/'
+                );
+                return;
+            }
+        }
             
             const addons = [];
             const addonNames = document.querySelectorAll('.new-addon-name');
@@ -3239,7 +3103,7 @@ window.toggleShopSuspension = async function(shopId, suspend) {
                             description: description,
                             price: price,
                             category: category,
-                            image_url: imageUrl || null,
+                            image_url: null,
                             badge: badge || null,
                             rating: rating,
                             preparation_time: preparationTime || '15-30'
@@ -3249,6 +3113,27 @@ window.toggleShopSuspension = async function(shopId, suspend) {
                     .single();
                 
                 if (error) throw error;
+                if (imageFile) {
+
+    const uploadedImageUrl =
+        await uploadMenuImage(
+            imageFile,
+            shopId,
+            menuItem.id
+        );
+
+    const { error: imageUpdateError } =
+        await supabase
+            .from('menu_items')
+            .update({
+                image_url: uploadedImageUrl
+            })
+            .eq('id', menuItem.id);
+
+    if (imageUpdateError) {
+        throw imageUpdateError;
+    }
+}
                 
                 if (addons.length > 0) {
                     const addonsToInsert = addons.map(addon => ({
@@ -3329,9 +3214,52 @@ window.editDevMenuItem = async function(itemId) {
                         <input type="text" class="form-input" id="edit-item-category" value="${menuItem.category}">
                     </div>
                     <div class="form-group">
-                        <label class="form-label">Image URL</label>
-                        <input type="text" class="form-input" id="edit-item-image" value="${menuItem.image_url || ''}">
-                    </div>
+    <label class="form-label">Menu Image</label>
+
+    ${
+        menuItem.image_url
+            ? `
+                <div style="margin-bottom: 10px;">
+                    <img
+                        src="${menuItem.image_url}"
+                        alt="${menuItem.name}"
+                        style="
+                            width: 100px;
+                            height: 80px;
+                            object-fit: cover;
+                            border-radius: 8px;
+                        "
+                    >
+                </div>
+            `
+            : ''
+    }
+
+    <input
+        type="file"
+        class="form-input"
+        id="edit-item-image"
+        accept=".jpg,image/jpeg"
+    >
+
+    <small style="
+        display: block;
+        margin-top: 6px;
+        color: #666;
+        line-height: 1.5;
+    ">
+        JPG only. Maximum size: 300 KB.
+        Leave empty to keep the current image.
+        If your image is too large,
+        <a
+            href="https://imagecompressor.com/"
+            target="_blank"
+            rel="noopener noreferrer"
+        >
+            compress your image here
+        </a>.
+    </small>
+</div>
                     <div class="form-group">
                         <label class="form-label">Badge (Optional)</label>
                         <input type="text" class="form-input" id="edit-item-badge" value="${menuItem.badge || ''}" placeholder="e.g., Popular, New, etc.">
@@ -3407,7 +3335,11 @@ async function saveMenuItemEdit(itemId, modal) {
     const description = document.getElementById('edit-item-desc').value;
     const price = parseFloat(document.getElementById('edit-item-price').value);
     const category = document.getElementById('edit-item-category').value;
-    const imageUrl = document.getElementById('edit-item-image').value;
+    const imageInput =
+    document.getElementById('edit-item-image');
+
+const imageFile =
+    imageInput.files?.[0] || null;
     const badge = document.getElementById('edit-item-badge').value;
     const rating = document.getElementById('edit-item-rating').value ? parseFloat(document.getElementById('edit-item-rating').value) : null;
     const preparationTime = document.getElementById('edit-item-prep-time').value;
@@ -3416,6 +3348,24 @@ async function saveMenuItemEdit(itemId, modal) {
         alert('Name, price, and category are required');
         return;
     }
+
+    if (imageFile) {
+
+    if (
+        imageFile.type !== 'image/jpeg' ||
+        !imageFile.name.toLowerCase().endsWith('.jpg')
+    ) {
+        alert('Only JPG menu images are allowed.');
+        return;
+    }
+
+    if (imageFile.size > 300 * 1024) {
+        alert(
+            'Your image exceeds the 300 KB size limit. Compress your image here: https://imagecompressor.com/'
+        );
+        return;
+    }
+}
     
     const addons = [];
     const addonNames = document.querySelectorAll('#edit-addons-container .edit-addon-name');
@@ -3430,6 +3380,28 @@ async function saveMenuItemEdit(itemId, modal) {
     }
     
     try {
+        let uploadedImageUrl = null;
+
+if (imageFile) {
+
+    const { data: itemData, error: itemError } =
+        await supabase
+            .from('menu_items')
+            .select('shop_id')
+            .eq('id', itemId)
+            .single();
+
+    if (itemError) {
+        throw itemError;
+    }
+
+    uploadedImageUrl =
+        await uploadMenuImage(
+            imageFile,
+            itemData.shop_id,
+            itemId
+        );
+}
         const { error } = await supabase
             .from('menu_items')
             .update({
@@ -3437,7 +3409,9 @@ async function saveMenuItemEdit(itemId, modal) {
                 description: description,
                 price: price,
                 category: category,
-                image_url: imageUrl || null,
+                ...(uploadedImageUrl
+                ? { image_url: uploadedImageUrl }
+                : {}),
                 badge: badge || null,
                 rating: rating,
                 preparation_time: preparationTime || '15-30'
@@ -3680,196 +3654,10 @@ async function saveMenuItemEdit(itemId, modal) {
         }
     }
 
-        function showSuspendedShopMessage() {
-    setHeaderVisibility(false);
-    
-    const mainContent = document.getElementById('main-content');
-    mainContent.innerHTML = `
-        <style>
-            .suspended-admin-container {
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                min-height: 100vh;
-                padding: 20px;
-                background: #f8fafc;
-            }
-            
-            .suspended-admin-card {
-                background: white;
-                border-radius: 32px;
-                padding: 48px 32px;
-                max-width: 450px;
-                width: 100%;
-                text-align: center;
-                box-shadow: 0 20px 40px rgba(0, 0, 0, 0.08);
-                animation: fadeInAdmin 0.5s ease;
-            }
-            
-            @keyframes fadeInAdmin {
-                from { opacity: 0; transform: scale(0.95); }
-                to { opacity: 1; transform: scale(1); }
-            }
-            
-            .suspended-admin-icon {
-                width: 100px;
-                height: 100px;
-                background: linear-gradient(135deg, #fee2e2, #ffebee);
-                border-radius: 50%;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                margin: 0 auto 24px;
-            }
-            
-            .suspended-admin-icon i {
-                font-size: 48px;
-                color: #dc2626;
-            }
-            
-            .suspended-admin-card h2 {
-                font-size: 28px;
-                font-weight: 800;
-                margin: 0 0 16px;
-                color: #dc2626;
-            }
-            
-            .suspended-admin-card p {
-                color: #475569;
-                font-size: 15px;
-                line-height: 1.5;
-                margin: 0 0 24px;
-            }
-            
-            .admin-contact-card {
-                background: #f8fafc;
-                border-radius: 24px;
-                padding: 24px;
-                margin: 24px 0;
-                text-align: left;
-            }
-            
-            .admin-contact-card h4 {
-                display: flex;
-                align-items: center;
-                gap: 10px;
-                margin: 0 0 20px;
-                font-size: 16px;
-                font-weight: 700;
-                color: #1e293b;
-            }
-            
-            .admin-contact-card h4 i {
-                color: var(--primary);
-            }
-            
-            .admin-contact-item {
-                display: flex;
-                align-items: center;
-                gap: 14px;
-                margin-bottom: 16px;
-            }
-            
-            .admin-contact-item:last-child {
-                margin-bottom: 0;
-            }
-            
-            .admin-contact-item i {
-                width: 40px;
-                height: 40px;
-                background: white;
-                border-radius: 50%;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                color: var(--primary);
-                font-size: 16px;
-            }
-            
-            .admin-contact-item div {
-                flex: 1;
-            }
-            
-            .admin-contact-label {
-                font-size: 11px;
-                color: #94a3b8;
-                text-transform: uppercase;
-                letter-spacing: 0.5px;
-                margin-bottom: 2px;
-            }
-            
-            .admin-contact-value {
-                font-size: 16px;
-                font-weight: 600;
-                color: #1e293b;
-            }
-            
-            .response-badge {
-                display: inline-flex;
-                align-items: center;
-                gap: 8px;
-                background: #f1f5f9;
-                padding: 8px 20px;
-                border-radius: 40px;
-                font-size: 13px;
-                color: #475569;
-                margin-top: 8px;
-            }
-        </style>
-        
-        <div class="suspended-admin-container">
-            <div class="suspended-admin-card">
-                <div class="suspended-admin-icon">
-                    <i class="fas fa-ban"></i>
-                </div>
-                
-                <h2>Shop Suspended</h2>
-                <p>Your shop has been suspended. Please contact the developer team to resolve this issue.</p>
-                
-                <div class="admin-contact-card">
-                    <h4>
-                        <i class="fas fa-headset"></i>
-                        Developer Contact
-                    </h4>
-                    
-                    <div class="admin-contact-item">
-                        <i class="fas fa-phone-alt"></i>
-                        <div>
-                            <div class="admin-contact-label">Phone</div>
-                            <div class="admin-contact-value">+27 81 792 5033</div>
-                        </div>
-                    </div>
-                    
-                    <div class="admin-contact-item">
-                        <i class="fas fa-envelope"></i>
-                        <div>
-                            <div class="admin-contact-label">Email</div>
-                            <div class="admin-contact-value">support@96studios.co.za</div>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="response-badge">
-                    <i class="fas fa-clock"></i>
-                    <span>Response time: 2-4 hours</span>
-                </div>
-            </div>
-        </div>
-    `;
-    
-    document.getElementById('bottom-nav').style.display = 'none';
-    document.getElementById('dev-admin-dashboard').classList.remove('active');
-    document.getElementById('shop-admin-dashboard').classList.remove('active');
-}
-
         async function loadShopAdminDashboard(adminData) {
-            setHeaderVisibility(false); 
-            if (adminData.shops.suspended) {
-                showSuspendedShopMessage();
-                return;
-            }
-            
-            currentShop = adminData.shops;
+    setHeaderVisibility(false);
+
+    currentShop = adminData.shops;
             const dashboard = document.getElementById('shop-admin-dashboard');
             dashboard.classList.add('active');
 
@@ -4122,6 +3910,48 @@ async function saveMenuItemEdit(itemId, modal) {
                 </div>
             </div>
         </div>
+
+        <div class="admin-section" id="shop-menu-editor">
+
+    <h2>Menu Management</h2>
+
+    <p style="
+        color: #666;
+        margin-bottom: 20px;
+    ">
+        You can edit your existing menu items.
+        Adding or deleting menu items is managed by FasFoods.
+    </p>
+
+    ${
+        currentShop.plan === 'free'
+            ? `
+                <div style="
+                    background: #fff3cd;
+                    border: 1px solid #ffe69c;
+                    color: #664d03;
+                    padding: 14px;
+                    border-radius: 10px;
+                    margin-bottom: 20px;
+                ">
+                    <strong>Free Plan</strong><br>
+                    Menu images are not available on the Free plan.
+                    Customers will see the default menu icon.
+                </div>
+            `
+            : ''
+    }
+
+    <div id="shop-admin-menu-list">
+
+        <div class="empty-state">
+            <i class="fas fa-utensils"></i>
+            <p>Loading menu...</p>
+        </div>
+
+    </div>
+
+</div>
         
         <div class="admin-section" id="working-hours">
             <h2>Working Hours & Availability</h2>
@@ -5710,25 +5540,574 @@ async function loadDevAdminSection(section) {
     }
 }
 
-        async function loadShopAdminSection(section) {
+async function loadShopAdminMenuEditor() {
+    if (!currentShop) return;
+
+    const container =
+        document.getElementById('shop-admin-menu-list');
+
+    if (!container) return;
+
+    container.innerHTML = `
+        <div class="empty-state">
+            <i class="fas fa-utensils"></i>
+            <p>Loading menu...</p>
+        </div>
+    `;
+
+    try {
+        const { data: menuItems, error } = await supabase
+            .from('menu_items')
+            .select('*')
+            .eq('shop_id', currentShop.id)
+            .order('category')
+            .order('name');
+
+        if (error) throw error;
+
+        if (!menuItems || menuItems.length === 0) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <i class="fas fa-utensils"></i>
+                    <p>No menu items found.</p>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = menuItems.map(item => `
+            <div style="
+                background: white;
+                border: 1px solid #eee;
+                border-radius: 12px;
+                padding: 16px;
+                margin-bottom: 12px;
+            ">
+
+                <div style="
+                    display: flex;
+                    justify-content: space-between;
+                    gap: 15px;
+                    align-items: center;
+                ">
+
+                    <div style="flex: 1;">
+
+                        <strong>
+                            ${escapeHtml(item.name)}
+                        </strong>
+
+                        <div style="
+                            font-size: 0.85rem;
+                            color: #777;
+                            margin-top: 5px;
+                        ">
+                            ${escapeHtml(item.category || '')}
+                            •
+                            R${Number(item.price).toFixed(2)}
+                        </div>
+
+                    </div>
+
+                    <button
+                        class="btn-secondary"
+                        onclick="editShopAdminMenuItem(${item.id})"
+                    >
+                        <i class="fas fa-edit"></i>
+                        Edit
+                    </button>
+
+                </div>
+
+            </div>
+        `).join('');
+
+    } catch (error) {
+        console.error(
+            'Error loading Shop Admin menu:',
+            error
+        );
+
+        container.innerHTML = `
+            <div class="empty-state">
+                <p>Unable to load menu.</p>
+            </div>
+        `;
+    }
+}
+
+window.editShopAdminMenuItem = async function(itemId) {
+
+    try {
+
+        const { data: menuItem, error } = await supabase
+            .from('menu_items')
+            .select('*')
+            .eq('id', itemId)
+            .eq('shop_id', currentShop.id)
+            .single();
+
+        if (error) throw error;
+
+
+        const modal = document.createElement('div');
+
+        modal.className = 'modal-overlay active';
+
+
+        modal.innerHTML = `
+            <div class="page-modal" style="max-width: 600px;">
+
+                <div class="page-header">
+
+                    <h2>Edit Menu Item</h2>
+
+                    <button
+                        class="modal-close"
+                        onclick="this.closest('.modal-overlay').remove()"
+                    >
+                        <i class="fas fa-times"></i>
+                    </button>
+
+                </div>
+
+
+                <div class="page-content">
+
+
+                    <div class="form-group">
+
+                        <label class="form-label">
+                            Item Name *
+                        </label>
+
+                        <input
+                            type="text"
+                            class="form-input"
+                            id="shop-edit-item-name"
+                            value="${escapeHtml(menuItem.name || '')}"
+                        >
+
+                    </div>
+
+
+                    <div class="form-group">
+
+                        <label class="form-label">
+                            Description
+                        </label>
+
+                        <textarea
+                            class="form-textarea"
+                            id="shop-edit-item-desc"
+                        >${escapeHtml(menuItem.description || '')}</textarea>
+
+                    </div>
+
+
+                    <div class="form-group">
+
+                        <label class="form-label">
+                            Price (Rands) *
+                        </label>
+
+                        <input
+                            type="number"
+                            step="0.01"
+                            class="form-input"
+                            id="shop-edit-item-price"
+                            value="${menuItem.price}"
+                        >
+
+                    </div>
+
+
+                    <div class="form-group">
+
+                        <label class="form-label">
+                            Category *
+                        </label>
+
+                        <input
+                            type="text"
+                            class="form-input"
+                            id="shop-edit-item-category"
+                            value="${escapeHtml(menuItem.category || '')}"
+                        >
+
+                    </div>
+
+
+                    <div class="form-group">
+
+                        <label class="form-label">
+                            Badge
+                        </label>
+
+                        <input
+                            type="text"
+                            class="form-input"
+                            id="shop-edit-item-badge"
+                            value="${escapeHtml(menuItem.badge || '')}"
+                            placeholder="Popular, New, Special..."
+                        >
+
+                    </div>
+
+
+                    <div class="form-group">
+
+                        <label class="form-label">
+                            Rating
+                        </label>
+
+                        <input
+                            type="number"
+                            step="0.1"
+                            min="0"
+                            max="5"
+                            class="form-input"
+                            id="shop-edit-item-rating"
+                            value="${menuItem.rating || ''}"
+                        >
+
+                    </div>
+
+
+                    ${
+                        currentShop.plan === 'paid'
+                            ? `
+                                <div class="form-group">
+
+                                    <label class="form-label">
+                                        Menu Image
+                                    </label>
+
+                                    ${
+                                        menuItem.image_url
+                                            ? `
+                                                <div style="
+                                                    margin-bottom: 10px;
+                                                ">
+                                                    <img
+                                                        src="${menuItem.image_url}"
+                                                        alt="${escapeHtml(menuItem.name || '')}"
+                                                        style="
+                                                            width: 110px;
+                                                            height: 85px;
+                                                            object-fit: cover;
+                                                            border-radius: 10px;
+                                                        "
+                                                    >
+                                                </div>
+                                            `
+                                            : ''
+                                    }
+
+                                    <input
+                                        type="file"
+                                        class="form-input"
+                                        id="shop-edit-item-image"
+                                        accept=".jpg,image/jpeg"
+                                    >
+
+                                    <small style="
+                                        display: block;
+                                        margin-top: 6px;
+                                        color: #666;
+                                        line-height: 1.5;
+                                    ">
+                                        JPG only. Maximum size: 300 KB.
+                                        Leave empty to keep the current image.
+                                        If your image is too large,
+                                        <a
+                                            href="https://imagecompressor.com/"
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                        >
+                                            compress your image here
+                                        </a>.
+                                    </small>
+
+                                </div>
+                            `
+                            : `
+                                <div style="
+                                    background: #f8f9fa;
+                                    border: 1px solid #e5e7eb;
+                                    padding: 14px;
+                                    border-radius: 10px;
+                                    color: #666;
+                                    margin-bottom: 18px;
+                                ">
+                                    Menu image uploads are available on the Paid plan.
+                                    Customers currently see the default menu icon.
+                                </div>
+                            `
+                    }
+
+
+                    <button
+                        class="btn-primary"
+                        id="save-shop-menu-edit-btn"
+                        style="width: 100%;"
+                    >
+                        Save Changes
+                    </button>
+
+
+                </div>
+
+            </div>
+        `;
+
+
+        document.body.appendChild(modal);
+
+
+        document
+            .getElementById('save-shop-menu-edit-btn')
+            .addEventListener(
+                'click',
+                async function() {
+
+                    await saveShopAdminMenuItem(
+                        itemId,
+                        modal
+                    );
+
+                }
+            );
+
+
+    } catch (error) {
+
+        console.error(
+            'Error loading Shop Admin menu item:',
+            error
+        );
+
+        alert(
+            'Unable to load menu item: ' +
+            error.message
+        );
+    }
+};
+
+async function saveShopAdminMenuItem(
+    itemId,
+    modal
+) {
+
+    const name =
+        document
+            .getElementById('shop-edit-item-name')
+            .value
+            .trim();
+
+    const description =
+        document
+            .getElementById('shop-edit-item-desc')
+            .value
+            .trim();
+
+    const price =
+        parseFloat(
+            document
+                .getElementById('shop-edit-item-price')
+                .value
+        );
+
+    const category =
+        document
+            .getElementById('shop-edit-item-category')
+            .value
+            .trim();
+
+    const badge =
+        document
+            .getElementById('shop-edit-item-badge')
+            .value
+            .trim();
+
+    const ratingValue =
+        document
+            .getElementById('shop-edit-item-rating')
+            .value;
+
+    const rating =
+        ratingValue
+            ? parseFloat(ratingValue)
+            : null;
+
+
+    if (!name || !price || !category) {
+
+        alert(
+            'Name, price, and category are required.'
+        );
+
+        return;
+    }
+
+
+    let imageFile = null;
+
+
+    if (currentShop.plan === 'paid') {
+
+        const imageInput =
+            document.getElementById(
+                'shop-edit-item-image'
+            );
+
+        imageFile =
+            imageInput?.files?.[0] || null;
+
+
+        if (imageFile) {
+
+            if (
+                imageFile.type !== 'image/jpeg' ||
+                !imageFile.name
+                    .toLowerCase()
+                    .endsWith('.jpg')
+            ) {
+
+                alert(
+                    'Only JPG menu images are allowed.'
+                );
+
+                return;
+            }
+
+
+            if (
+                imageFile.size >
+                300 * 1024
+            ) {
+
+                alert(
+                    'Your image exceeds the 300 KB size limit. Compress your image here: https://imagecompressor.com/'
+                );
+
+                return;
+            }
+        }
+    }
+
+
+    try {
+
+        let uploadedImageUrl = null;
+
+
+        if (
+            currentShop.plan === 'paid' &&
+            imageFile
+        ) {
+
+            uploadedImageUrl =
+                await uploadMenuImage(
+                    imageFile,
+                    currentShop.id,
+                    itemId
+                );
+        }
+
+
+        const updateData = {
+
+            name: name,
+
+            description: description,
+
+            price: price,
+
+            category: category,
+
+            badge: badge || null,
+
+            rating: rating
+
+        };
+
+
+        if (uploadedImageUrl) {
+
+            updateData.image_url =
+                uploadedImageUrl;
+        }
+
+
+        const { error } = await supabase
+            .from('menu_items')
+            .update(updateData)
+            .eq('id', itemId)
+            .eq('shop_id', currentShop.id);
+
+
+        if (error) throw error;
+
+
+        showToast(
+            'Menu item updated successfully!'
+        );
+
+
+        modal.remove();
+
+
+        await loadShopAdminMenuEditor();
+
+
+    } catch (error) {
+
+        console.error(
+            'Error updating Shop Admin menu item:',
+            error
+        );
+
+        alert(
+            'Unable to update menu item: ' +
+            error.message
+        );
+    }
+}
+
+async function loadShopAdminSection(section) {
     document.querySelectorAll('#shop-admin-content .admin-section').forEach(s => s.classList.remove('active'));
     document.getElementById(section).classList.add('active');
     
     if (section === 'shop-customers') {
-        await loadShopCustomers();
-        setupShopCustomersEventListeners();
-    } else if (section === 'shop-orders') {
-        await loadShopOrders();
-    } else if (section === 'shop-notifications') {
-        await loadShopNotifications();
-    } else if (section === 'working-hours') {
-    } else if (section === 'shop-settings') {
-    } else if (section === 'shop-adverts') {
-        await loadShopAdverts();
 
-    } else if (section === 'shop-payments') {
-        await loadShopPayments();
-    }
+    await loadShopCustomers();
+    setupShopCustomersEventListeners();
+
+} else if (section === 'shop-menu-editor') {
+
+    await loadShopAdminMenuEditor();
+
+} else if (section === 'shop-orders') {
+
+    await loadShopOrders();
+
+} else if (section === 'shop-notifications') {
+
+    await loadShopNotifications();
+
+} else if (section === 'working-hours') {
+
+} else if (section === 'shop-settings') {
+
+} else if (section === 'shop-adverts') {
+
+    await loadShopAdverts();
+
+} else if (section === 'shop-payments') {
+
+    await loadShopPayments();
+}
     if (section === 'shop-orders') {
         hasNewOrderAlert = false;
         
@@ -6075,115 +6454,191 @@ async function loadShopPayments() {
 
 
         paymentHistory.innerHTML =
-            payments.map(payment => {
+    payments.map(payment => {
 
-                const paymentStatus =
-                    String(
-                        payment.status || 'pending'
-                    ).toLowerCase();
+        const paymentStatus =
+            String(
+                payment.status || 'pending'
+            ).toLowerCase();
 
+        const statusConfig = {
+            paid: {
+                label: 'Paid',
+                color: '#15803d',
+                background: '#dcfce7'
+            },
 
-                const paid =
-                    paymentStatus === 'paid';
+            pending: {
+                label: 'Pending',
+                color: '#92400e',
+                background: '#fef3c7'
+            },
 
+            failed: {
+                label: 'Failed',
+                color: '#b91c1c',
+                background: '#fee2e2'
+            },
 
-                return `
-                    <div style="
-                        padding: 16px 0;
-                        border-bottom: 1px solid #eee;
-                        display: flex;
-                        justify-content: space-between;
-                        gap: 15px;
-                        align-items: center;
-                        flex-wrap: wrap;
-                    ">
+            cancelled: {
+                label: 'Cancelled',
+                color: '#475569',
+                background: '#f1f5f9'
+            }
+        };
 
-                        <div>
+        const selectedStatus =
+            statusConfig[paymentStatus] ||
+            statusConfig.pending;
 
-                            <strong>
-                                ${formatBillingMonth(
-                                    payment.billing_month
-                                )}
-                            </strong>
-
-                            <div style="
-                                color: #777;
-                                font-size: 0.8rem;
-                                margin-top: 4px;
-                            ">
-                                ${
-                                    payment.transaction_reference ||
-                                    payment.payment_reference ||
-                                    'Subscription payment'
-                                }
-                            </div>
-
-                            ${
-                                payment.invoice_number
-                                    ? `
-                                        <div style="
-                                            color: #888;
-                                            font-size: 0.75rem;
-                                            margin-top: 3px;
-                                        ">
-                                            Invoice:
-                                            ${payment.invoice_number}
-                                        </div>
-                                      `
-                                    : ''
+        const paymentDate =
+            payment.paid_at
+                ? new Date(payment.paid_at)
+                    .toLocaleDateString(
+                        'en-ZA',
+                        {
+                            day: '2-digit',
+                            month: 'short',
+                            year: 'numeric'
+                        }
+                    )
+                : payment.created_at
+                    ? new Date(payment.created_at)
+                        .toLocaleDateString(
+                            'en-ZA',
+                            {
+                                day: '2-digit',
+                                month: 'short',
+                                year: 'numeric'
                             }
+                        )
+                    : '-';
 
+        const reference =
+            payment.transaction_reference ||
+            payment.payment_reference ||
+            payment.bank_reference ||
+            '-';
+
+        return `
+            <div style="
+                padding: 18px 0;
+                border-bottom: 1px solid #eee;
+            ">
+
+                <div style="
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: flex-start;
+                    gap: 15px;
+                    flex-wrap: wrap;
+                ">
+
+                    <div>
+
+                        <strong style="
+                            display: block;
+                            margin-bottom: 5px;
+                            font-size: 1rem;
+                        ">
+                            ${formatBillingMonth(
+                                payment.billing_month
+                            )}
+                        </strong>
+
+                        <div style="
+                            color: #777;
+                            font-size: 0.8rem;
+                            margin-bottom: 4px;
+                        ">
+                            ${paymentDate}
                         </div>
 
-
-                        <div style="text-align: right;">
-
-                            <strong style="
-                                display: block;
-                                margin-bottom: 5px;
-                            ">
-                                R${Number(
-                                    payment.amount || 99
-                                ).toFixed(2)}
-                            </strong>
-
-                            <span style="
-                                font-size: 0.75rem;
-                                font-weight: 700;
-                                text-transform: uppercase;
-                                color:
-                                    ${
-                                        paid
-                                            ? '#28a745'
-                                            : '#856404'
-                                    };
-                            ">
-                                ${paymentStatus}
-                            </span>
-
-                            ${
-                                paid &&
-                                payment.invoice_number
-                                    ? `
-                                        <div style="margin-top: 8px;">
-                                            <button
-                                                class="btn-secondary btn-small"
-                                                onclick="downloadShopInvoice(${payment.id})"
-                                            >
-                                                <i class="fas fa-download"></i>
-                                                Invoice
-                                            </button>
-                                        </div>
-                                      `
-                                    : ''
-                            }
-
+                        <div style="
+                            color: #888;
+                            font-size: 0.75rem;
+                            word-break: break-word;
+                        ">
+                            Reference:
+                            ${escapeInvoiceText(reference)}
                         </div>
+
+                        ${
+                            payment.invoice_number
+                                ? `
+                                    <div style="
+                                        color: #888;
+                                        font-size: 0.75rem;
+                                        margin-top: 3px;
+                                    ">
+                                        Invoice:
+                                        ${escapeInvoiceText(
+                                            payment.invoice_number
+                                        )}
+                                    </div>
+                                  `
+                                : ''
+                        }
 
                     </div>
-                `;
 
-            }).join('');
+
+                    <div style="
+                        text-align: right;
+                        min-width: 110px;
+                    ">
+
+                        <strong style="
+                            display: block;
+                            font-size: 1rem;
+                            margin-bottom: 7px;
+                        ">
+                            R${Number(
+                                payment.amount || 99
+                            ).toFixed(2)}
+                        </strong>
+
+                        <span style="
+                            display: inline-block;
+                            padding: 5px 10px;
+                            border-radius: 20px;
+                            font-size: 0.7rem;
+                            font-weight: 700;
+                            text-transform: uppercase;
+                            color: ${selectedStatus.color};
+                            background: ${selectedStatus.background};
+                        ">
+                            ${selectedStatus.label}
+                        </span>
+
+                    </div>
+
+                </div>
+
+
+                ${
+                    paymentStatus === 'paid' &&
+                    payment.invoice_number
+                        ? `
+                            <div style="
+                                margin-top: 14px;
+                            ">
+                                <button
+                                    class="btn-secondary btn-small"
+                                    onclick="downloadShopInvoice(${payment.id})"
+                                >
+                                    <i class="fas fa-download"></i>
+                                    Download Invoice
+                                </button>
+                            </div>
+                          `
+                        : ''
+                }
+
+            </div>
+        `;
+
+    }).join('');
 
     } catch (error) {
 
@@ -6222,6 +6677,417 @@ function formatSubscriptionDate(dateValue) {
             year: 'numeric'
         }
     );
+}
+
+async function downloadShopInvoice(paymentId) {
+    if (!currentShop) {
+        alert('Shop information is unavailable.');
+        return;
+    }
+
+    try {
+        const { data: payment, error } = await supabase
+            .from('shop_subscription_payments')
+            .select('*')
+            .eq('id', paymentId)
+            .eq('shop_id', currentShop.id)
+            .single();
+
+        if (error || !payment) {
+            throw new Error('Invoice payment record could not be found.');
+        }
+
+        if (payment.status !== 'paid') {
+            throw new Error('An invoice is only available for paid subscriptions.');
+        }
+
+        const invoiceNumber =
+            payment.invoice_number ||
+            `FAS-INV-${payment.id}`;
+
+        const billingMonth =
+            formatBillingMonth(
+                payment.billing_month
+            );
+
+        const paidDate =
+            payment.paid_at
+                ? new Date(payment.paid_at)
+                    .toLocaleDateString(
+                        'en-ZA',
+                        {
+                            day: '2-digit',
+                            month: 'long',
+                            year: 'numeric'
+                        }
+                    )
+                : '-';
+
+        const amount =
+            Number(
+                payment.amount || 99
+            ).toFixed(2);
+
+        const transactionReference =
+            payment.transaction_reference ||
+            payment.payment_reference ||
+            '-';
+
+        const invoiceWindow =
+            window.open(
+                '',
+                '_blank',
+                'width=850,height=950'
+            );
+
+        if (!invoiceWindow) {
+            throw new Error(
+                'Please allow pop-ups so the invoice can open.'
+            );
+        }
+
+        invoiceWindow.document.write(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+
+                <title>
+                    ${invoiceNumber}
+                </title>
+
+                <style>
+                    * {
+                        box-sizing: border-box;
+                    }
+
+                    body {
+                        margin: 0;
+                        padding: 40px;
+                        font-family: Arial, sans-serif;
+                        color: #222;
+                        background: white;
+                    }
+
+                    .invoice {
+                        max-width: 760px;
+                        margin: 0 auto;
+                    }
+
+                    .header {
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: flex-start;
+                        gap: 30px;
+                        padding-bottom: 25px;
+                        border-bottom: 3px solid #FF7B31;
+                    }
+
+                    .brand h1 {
+                        margin: 0;
+                        color: #FF7B31;
+                        font-size: 30px;
+                    }
+
+                    .brand p {
+                        margin: 6px 0 0;
+                        color: #777;
+                    }
+
+                    .invoice-title {
+                        text-align: right;
+                    }
+
+                    .invoice-title h2 {
+                        margin: 0;
+                        font-size: 26px;
+                    }
+
+                    .invoice-title p {
+                        margin: 7px 0 0;
+                        color: #666;
+                    }
+
+                    .details {
+                        display: grid;
+                        grid-template-columns: 1fr 1fr;
+                        gap: 25px;
+                        margin-top: 35px;
+                    }
+
+                    .box {
+                        padding: 20px;
+                        background: #f8f9fa;
+                        border-radius: 12px;
+                    }
+
+                    .box h3 {
+                        margin: 0 0 12px;
+                        font-size: 14px;
+                        text-transform: uppercase;
+                        color: #777;
+                    }
+
+                    .box p {
+                        margin: 5px 0;
+                    }
+
+                    table {
+                        width: 100%;
+                        border-collapse: collapse;
+                        margin-top: 35px;
+                    }
+
+                    th,
+                    td {
+                        padding: 15px;
+                        text-align: left;
+                        border-bottom: 1px solid #ddd;
+                    }
+
+                    th {
+                        background: #f8f9fa;
+                        font-size: 13px;
+                        text-transform: uppercase;
+                    }
+
+                    .amount {
+                        text-align: right;
+                    }
+
+                    .total {
+                        margin-top: 25px;
+                        display: flex;
+                        justify-content: flex-end;
+                    }
+
+                    .total-box {
+                        min-width: 260px;
+                        padding: 20px;
+                        background: #fff5ee;
+                        border-radius: 12px;
+                    }
+
+                    .total-row {
+                        display: flex;
+                        justify-content: space-between;
+                        font-size: 18px;
+                    }
+
+                    .total-row strong:last-child {
+                        color: #FF7B31;
+                    }
+
+                    .footer {
+                        margin-top: 45px;
+                        padding-top: 20px;
+                        border-top: 1px solid #ddd;
+                        text-align: center;
+                        color: #777;
+                        font-size: 12px;
+                    }
+
+                    .print-btn {
+                        display: block;
+                        margin: 30px auto 0;
+                        padding: 13px 28px;
+                        border: 0;
+                        border-radius: 10px;
+                        background: #FF7B31;
+                        color: white;
+                        font-size: 15px;
+                        font-weight: bold;
+                        cursor: pointer;
+                    }
+
+                    @media print {
+                        body {
+                            padding: 0;
+                        }
+
+                        .print-btn {
+                            display: none;
+                        }
+                    }
+                </style>
+            </head>
+
+            <body>
+
+                <div class="invoice">
+
+                    <div class="header">
+
+                        <div class="brand">
+                            <h1>FasFoods</h1>
+                            <p>
+                                Shop Subscription
+                            </p>
+                        </div>
+
+                        <div class="invoice-title">
+                            <h2>INVOICE</h2>
+
+                            <p>
+                                ${invoiceNumber}
+                            </p>
+                        </div>
+
+                    </div>
+
+
+                    <div class="details">
+
+                        <div class="box">
+                            <h3>Billed To</h3>
+
+                            <p>
+                                <strong>
+                                    ${escapeInvoiceText(
+                                        currentShop.name
+                                    )}
+                                </strong>
+                            </p>
+
+                            ${
+                                currentShop.email
+                                    ? `
+                                        <p>
+                                            ${escapeInvoiceText(
+                                                currentShop.email
+                                            )}
+                                        </p>
+                                      `
+                                    : ''
+                            }
+
+                            ${
+                                currentShop.address
+                                    ? `
+                                        <p>
+                                            ${escapeInvoiceText(
+                                                currentShop.address
+                                            )}
+                                        </p>
+                                      `
+                                    : ''
+                            }
+                        </div>
+
+
+                        <div class="box">
+                            <h3>Payment Details</h3>
+
+                            <p>
+                                <strong>Paid:</strong>
+                                ${paidDate}
+                            </p>
+
+                            <p>
+                                <strong>Billing month:</strong>
+                                ${billingMonth}
+                            </p>
+
+                            <p>
+                                <strong>Reference:</strong>
+                                ${escapeInvoiceText(
+                                    transactionReference
+                                )}
+                            </p>
+                        </div>
+
+                    </div>
+
+
+                    <table>
+
+                        <thead>
+                            <tr>
+                                <th>Description</th>
+                                <th>Period</th>
+                                <th class="amount">
+                                    Amount
+                                </th>
+                            </tr>
+                        </thead>
+
+                        <tbody>
+                            <tr>
+                                <td>
+                                    FasFoods Paid Plan
+                                </td>
+
+                                <td>
+                                    ${billingMonth}
+                                </td>
+
+                                <td class="amount">
+                                    R${amount}
+                                </td>
+                            </tr>
+                        </tbody>
+
+                    </table>
+
+
+                    <div class="total">
+
+                        <div class="total-box">
+
+                            <div class="total-row">
+                                <strong>Total Paid</strong>
+
+                                <strong>
+                                    R${amount}
+                                </strong>
+                            </div>
+
+                        </div>
+
+                    </div>
+
+
+                    <div class="footer">
+                        Subscription payment received by
+                        FasFoods / 96 Studios.
+                    </div>
+
+
+                    <button
+                        class="print-btn"
+                        onclick="window.print()"
+                    >
+                        Download / Print Invoice
+                    </button>
+
+                </div>
+
+            </body>
+            </html>
+        `);
+
+        invoiceWindow.document.close();
+
+    } catch (error) {
+        console.error(
+            'Invoice download error:',
+            error
+        );
+
+        alert(
+            error.message ||
+            'Unable to open invoice.'
+        );
+    }
+}
+
+function escapeInvoiceText(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
 }
 
 async function startShopSubscriptionPayment() {
@@ -6675,6 +7541,83 @@ async function saveWorkingHours() {
             btn.disabled = false;
         }
     }
+}
+
+function showSubscriptionOfflineCustomerView() {
+    setHeaderVisibility(true);
+
+    if (currentShop) {
+        updateHeaderText(currentShop);
+    }
+
+    const mainContent =
+        document.getElementById('main-content');
+
+    mainContent.innerHTML = `
+        <div
+            style="
+                min-height: calc(100vh - 140px);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 24px;
+            "
+        >
+            <div
+                style="
+                    width: 100%;
+                    max-width: 430px;
+                    background: #ffffff;
+                    border: 1px solid #eeeeee;
+                    border-radius: 28px;
+                    padding: 38px 28px;
+                    text-align: center;
+                    box-shadow: 0 8px 28px rgba(0,0,0,0.06);
+                "
+            >
+
+                <div
+                    style="
+                        width: 82px;
+                        height: 82px;
+                        margin: 0 auto 22px;
+                        border-radius: 50%;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        background: #f3f4f6;
+                        color: #6b7280;
+                        font-size: 34px;
+                    "
+                >
+                    <i class="fas fa-store"></i>
+                </div>
+
+                <h2
+                    style="
+                        margin: 0 0 12px;
+                        font-size: 24px;
+                        color: #222;
+                    "
+                >
+                    Shop Temporarily Offline
+                </h2>
+
+                <p
+                    style="
+                        margin: 0;
+                        color: #666;
+                        line-height: 1.6;
+                    "
+                >
+                    ${escapeInvoiceText(currentShop.name)}
+                    is temporarily unavailable for online orders.
+                    Please check again later.
+                </p>
+
+            </div>
+        </div>
+    `;
 }
 
 function showTemporarilyClosedMessage() {
@@ -7352,6 +8295,88 @@ function closeCartSheet() {
     }
 }
 
+async function uploadMenuImage(
+    file,
+    shopId,
+    menuItemId
+) {
+
+    if (!file) {
+        return null;
+    }
+
+    // JPG ONLY
+    if (
+        file.type !== 'image/jpeg' ||
+        !file.name.toLowerCase().endsWith('.jpg')
+    ) {
+        throw new Error(
+            'Only JPG images are allowed.'
+        );
+    }
+
+
+    // 300 KB MAXIMUM
+    const maxSize =
+        300 * 1024;
+
+    if (file.size > maxSize) {
+
+        throw new Error(
+            'Your image exceeds the 300 KB size limit. Please compress your image before uploading.'
+        );
+    }
+
+
+    const fileName =
+        `menu-${menuItemId}-${Date.now()}.jpg`;
+
+    const filePath =
+        `${shopId}/${fileName}`;
+
+
+    const {
+        data,
+        error
+    } =
+        await supabase
+            .storage
+            .from('menu-images')
+            .upload(
+                filePath,
+                file,
+                {
+                    contentType: 'image/jpeg',
+                    cacheControl: '3600',
+                    upsert: false
+                }
+            );
+
+
+    if (error) {
+        console.error(
+            'Menu image upload error:',
+            error
+        );
+
+        throw error;
+    }
+
+
+    const {
+        data: publicUrlData
+    } =
+        supabase
+            .storage
+            .from('menu-images')
+            .getPublicUrl(
+                data.path
+            );
+
+
+    return publicUrlData.publicUrl;
+}
+
 function updateCartContent() {
     const container = document.getElementById('cart-items-container');
     const footer = document.getElementById('cart-footer');
@@ -7389,10 +8414,20 @@ function updateCartContent() {
         <div class="cart-item-card" data-index="${index}">
             <div class="cart-item-info">
                 <div class="cart-item-image">
-                    ${item.image_url ? 
-                        `<img src="${item.image_url}" alt="${item.name}" onerror="this.parentElement.innerHTML='<i class=\'fas fa-utensils\'></i>'">` :
-                        `<i class="fas fa-utensils"></i>`
+
+                    ${
+                        currentShop?.plan === 'paid' &&
+                        item.image_url
+
+                            ? `<img
+                                    src="${item.image_url}"
+                                    alt="${item.name}"
+                                    onerror="this.parentElement.innerHTML='<i class=\\'fas fa-utensils\\'></i>'"
+                            />`
+
+                            : `<i class="fas fa-utensils"></i>`
                     }
+
                 </div>
                 <div class="cart-item-details">
                     <div class="cart-item-name">${escapeHtml(item.name)}</div>
@@ -7942,6 +8977,61 @@ function formatScheduledDateTime(timeString) {
 
 async function submitOrder(profile, hasProfileFromCheckout) {
     if (!currentUser || !currentShop) return;
+
+    // =========================================
+    // SUBSCRIPTION SAFETY CHECK
+    // Re-check the shop directly from Supabase
+    // before allowing an online order.
+    // =========================================
+
+    const {
+        data: latestShop,
+        error: shopStatusError
+    } = await supabase
+        .from('shops')
+        .select(`
+            id,
+            plan,
+            subscription_status,
+            temporary_closed
+        `)
+        .eq('id', currentShop.id)
+        .single();
+
+    if (shopStatusError || !latestShop) {
+        console.error(
+            'Unable to verify shop status:',
+            shopStatusError
+        );
+
+        alert(
+            'Unable to verify whether this shop is available. Please try again.'
+        );
+
+        return;
+    }
+
+
+    if (
+        latestShop.plan === 'paid' &&
+        latestShop.subscription_status === 'offline'
+    ) {
+        currentShop.subscription_status =
+            latestShop.subscription_status;
+
+        showSubscriptionOfflineCustomerView();
+
+        return;
+    }
+
+
+    if (latestShop.temporary_closed) {
+        currentShop.temporary_closed = true;
+
+        showTemporarilyClosedMessage();
+
+        return;
+    }
     
     const collectionMethod = document.getElementById('collection-method').value;
     const paymentMethod = document.getElementById('payment-method').value;
@@ -10738,7 +11828,6 @@ loadShopAdminContent = function() {
 // window.addAddonField = addAddonField;
 // window.addNewAddonField = addNewAddonField;
 // window.editShopColors = editShopColors;
-// window.toggleShopSuspension = toggleShopSuspension;
 // window.editDevMenuItem = editDevMenuItem;
 // window.deleteDevMenuItem = deleteDevMenuItem;
 // window.deleteShop = deleteShop;

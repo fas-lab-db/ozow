@@ -4287,9 +4287,35 @@ if (imageFile) {
         box-shadow: 0 2px 5px rgba(0,0,0,0.05);
     ">
 
-        <h3 style="margin: 0 0 20px 0;">
-            Payment History
-        </h3>
+        <div style="
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+">
+
+    <h3 style="margin: 0;">
+        Payment History
+    </h3>
+
+    <select
+        id="payment-history-filter"
+        class="form-input"
+        style="
+            width: auto;
+            min-width: 140px;
+        "
+    >
+        <option value="all">All Payments</option>
+        <option value="paid">Paid</option>
+        <option value="pending">Pending</option>
+        <option value="failed">Failed</option>
+        <option value="cancelled">Cancelled</option>
+    </select>
+
+</div>
 
         <div id="shop-payment-history">
             <div class="empty-state">
@@ -6624,9 +6650,45 @@ if (latestShopError) {
             return;
         }
 
+        const historyFilter =
+    document.getElementById(
+        'payment-history-filter'
+    );
+
+const selectedHistoryStatus =
+    historyFilter?.value || 'all';
+
+const filteredPayments =
+    selectedHistoryStatus === 'all'
+        ? payments
+        : payments.filter(payment =>
+            String(
+                payment.status || 'pending'
+            ).toLowerCase() ===
+            selectedHistoryStatus
+        );
+
+        if (filteredPayments.length === 0) {
+
+    paymentHistory.innerHTML = `
+        <div class="empty-state">
+            <i class="fas fa-receipt"></i>
+            <p>No payments found for this status.</p>
+        </div>
+    `;
+
+    if (historyFilter) {
+        historyFilter.onchange =
+            async function() {
+                await loadShopPayments();
+            };
+    }
+
+    return;
+}
 
         paymentHistory.innerHTML =
-    payments.map(payment => {
+    filteredPayments.map(payment => {
 
         const paymentStatus =
             String(
@@ -6811,6 +6873,16 @@ if (latestShopError) {
         `;
 
     }).join('');
+
+    if (historyFilter) {
+
+    historyFilter.onchange =
+        async function() {
+
+            await loadShopPayments();
+
+        };
+}
 
     } catch (error) {
 

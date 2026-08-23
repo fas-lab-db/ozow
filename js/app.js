@@ -3980,6 +3980,50 @@ if (imageFile) {
             Shop email cannot be changed. Contact developer for email updates.
         </small>
     </div>
+    <div style="
+    margin-top: 25px;
+    padding: 18px;
+    background: #f8f9fa;
+    border-radius: 12px;
+">
+
+    <h4 style="margin: 0 0 8px 0;">
+        <i class="fas fa-bell"></i>
+        Order Push Notifications
+    </h4>
+
+    ${
+        currentShop.plan === 'paid'
+            ? `
+                <p style="
+                    margin: 0 0 15px 0;
+                    color: #666;
+                    font-size: 0.9rem;
+                ">
+                    Receive a phone notification whenever a new online order arrives.
+                </p>
+
+                <button
+                    type="button"
+                    id="enable-push-notifications-btn"
+                    class="btn-primary"
+                    onclick="enableShopPushNotifications()"
+                >
+                    <i class="fas fa-bell"></i>
+                    Enable Push Notifications
+                </button>
+            `
+            : `
+                <p style="
+                    margin: 0;
+                    color: #856404;
+                ">
+                    Push notifications are available on the Paid plan.
+                </p>
+            `
+    }
+
+</div>
     <div class="form-group">
         <label class="form-label">Address</label>
         <textarea class="form-textarea" id="settings-shop-address">${currentShop.address || ''}</textarea>
@@ -4757,6 +4801,22 @@ function resetOfflineOrderForm() {
     loadShopMenuItems();
 }
 
+function getCurrentOrderHistoryStart() {
+
+    const now = new Date();
+
+    const year =
+        now.getFullYear();
+
+    const month =
+        String(
+            now.getMonth() + 1
+        ).padStart(2, '0');
+
+    return new Date(
+        `${year}-${month}-01T00:59:00+02:00`
+    ).toISOString();
+}
 
 async function loadShopOrders() {
     if (!currentShop) return;
@@ -4764,11 +4824,23 @@ async function loadShopOrders() {
     const filter = document.getElementById('orders-filter').value;
     
     try {
-        let query = supabase
-            .from('orders')
-            .select('*')
-            .eq('shop_id', currentShop.id)
-            .order('created_at', { ascending: false });
+        const historyStart =
+    getCurrentOrderHistoryStart();
+
+let query = supabase
+    .from('orders')
+    .select('*')
+    .eq('shop_id', currentShop.id)
+    .gte(
+        'created_at',
+        historyStart
+    )
+    .order(
+        'created_at',
+        {
+            ascending: false
+        }
+    );
         
         if (filter === 'active') {
             query = query.in('status', ['waiting', 'preparing', 'ready']);
@@ -6616,23 +6688,45 @@ if (latestShopError) {
 
     try {
 
-        const {
-            data: payments,
-            error
-        } = await supabase
-            .from('shop_subscription_payments')
-            .select('*')
-            .eq('shop_id', currentShop.id)
-            .order('created_at', {
-                ascending: false
-            });
+        const sastNow =
+    new Date(
+        Date.now() +
+        (2 * 60 * 60 * 1000)
+    );
+
+const currentYear =
+    sastNow.getUTCFullYear();
+
+const currentYearStart =
+    new Date(
+        `${currentYear}-01-01T00:59:00+02:00`
+    ).toISOString();
+
+
+const {
+    data: payments,
+    error
+} = await supabase
+    .from('shop_subscription_payments')
+    .select('*')
+    .eq('shop_id', currentShop.id)
+    .gte(
+        'created_at',
+        currentYearStart
+    )
+    .order('created_at', {
+        ascending: false
+    });
 
 
         if (error) {
             throw error;
         }
 
-        const pendingPayment =
+        const effectiveBillingMonth =
+    getEffectiveShopBillingMonth();
+
+const pendingPayment =
     payments?.find(payment => {
 
         const paymentStatus =
@@ -6641,18 +6735,13 @@ if (latestShopError) {
             ).toLowerCase();
 
         const billingMonth =
-    String(
-        payment.billing_month || ''
-    ).slice(0, 7);
-
-const nextBillingMonth =
-    String(
-        currentShop.next_billing_date || ''
-    ).slice(0, 7);
+            String(
+                payment.billing_month || ''
+            ).slice(0, 10);
 
         return (
             paymentStatus === 'pending' &&
-            billingMonth === nextBillingMonth
+            billingMonth === effectiveBillingMonth
         );
     });
 
@@ -7372,6 +7461,38 @@ function escapeInvoiceText(value) {
         .replace(/'/g, '&#039;');
 }
 
+function getEffectiveShopBillingMonth() {
+
+    const now =
+        new Date();
+
+    const currentMonth =
+        `${now.getFullYear()}-` +
+        `${String(
+            now.getMonth() + 1
+        ).padStart(2, '0')}-01`;
+
+
+    if (!currentShop?.next_billing_date) {
+        return currentMonth;
+    }
+
+
+    const scheduledMonth =
+        String(
+            currentShop.next_billing_date
+        ).slice(0, 7) + '-01';
+
+
+    // Previous unpaid months are skipped.
+    if (scheduledMonth < currentMonth) {
+        return currentMonth;
+    }
+
+
+    return scheduledMonth;
+}
+
 async function startShopSubscriptionPayment() {
 
     if (!currentShop) {
@@ -7392,9 +7513,9 @@ async function startShopSubscriptionPayment() {
     .select('id, status, billing_month')
     .eq('shop_id', currentShop.id)
     .eq(
-        'billing_month',
-        currentShop.next_billing_date
-    )
+    'billing_month',
+    getEffectiveShopBillingMonth()
+)
     .eq('status', 'pending')
     .maybeSingle();
 
@@ -13314,3 +13435,152 @@ async function handleSubscriptionPaymentReturn() {
         );
     }
 }
+
+function urlBase64ToUint8Array(base64String) {
+
+    const padding =
+        '='.repeat(
+            (4 - base64String.length % 4) % 4
+        );
+
+    const base64 =
+        (base64String + padding)
+            .replace(/-/g, '+')
+            .replace(/_/g, '/');
+
+    const rawData =
+        window.atob(base64);
+
+    return Uint8Array.from(
+        [...rawData].map(
+            char => char.charCodeAt(0)
+        )
+    );
+}
+
+async function enableShopPushNotifications() {
+
+    if (!currentShop) {
+        alert('Shop information is unavailable.');
+        return;
+    }
+
+    if (currentShop.plan !== 'paid') {
+        alert(
+            'Push notifications are available on the Paid plan.'
+        );
+        return;
+    }
+
+    if (!('serviceWorker' in navigator)) {
+        alert(
+            'This browser does not support push notifications.'
+        );
+        return;
+    }
+
+    if (!('PushManager' in window)) {
+        alert(
+            'Push notifications are not supported on this device.'
+        );
+        return;
+    }
+
+    try {
+
+        const permission =
+            await Notification.requestPermission();
+
+        if (permission !== 'granted') {
+            alert(
+                'Notification permission was not allowed.'
+            );
+            return;
+        }
+
+        const registration =
+            await navigator.serviceWorker.register(
+                '/sw.js'
+            );
+
+        const existingSubscription =
+            await registration.pushManager
+                .getSubscription();
+
+        let subscription =
+            existingSubscription;
+
+        if (!subscription) {
+
+            subscription =
+                await registration.pushManager
+                    .subscribe({
+                        userVisibleOnly: true,
+
+                        applicationServerKey:
+                            urlBase64ToUint8Array(
+                                'BDi8oWJnmhw99G4Sf1gRqCzpoNLaufj_OB8IN6NC-_zCAH6qKBSuqgZCm6o5Pmy5cLqtgdCt_7EVXM5Q1Rgh0Xc'
+                            )
+                    });
+        }
+
+        const subscriptionJson =
+            subscription.toJSON();
+
+        const {
+            error
+        } = await supabase
+            .from(
+                'shop_push_subscriptions'
+            )
+            .upsert(
+                {
+                    shop_id:
+                        currentShop.id,
+
+                    endpoint:
+                        subscriptionJson.endpoint,
+
+                    p256dh:
+                        subscriptionJson.keys.p256dh,
+
+                    auth:
+                        subscriptionJson.keys.auth,
+
+                    user_agent:
+                        navigator.userAgent,
+
+                    updated_at:
+                        new Date()
+                            .toISOString()
+                },
+                {
+                    onConflict:
+                        'endpoint'
+                }
+            );
+
+        if (error) {
+            throw error;
+        }
+
+        showToast(
+            'Push notifications enabled.'
+        );
+
+    } catch (error) {
+
+        console.error(
+            'Push notification setup error:',
+            error
+        );
+
+        alert(
+            error.message ||
+            'Unable to enable push notifications.'
+        );
+    }
+}
+
+window.enableShopPushNotifications =
+enableShopPushNotifications;

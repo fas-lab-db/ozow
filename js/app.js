@@ -13498,14 +13498,16 @@ async function enableShopPushNotifications() {
             return;
         }
 
+        await navigator.serviceWorker.register(
+         '/sw.js'
+        );
+
         const registration =
-            await navigator.serviceWorker.register(
-                '/sw.js'
-            );
+        await navigator.serviceWorker.ready;
 
         const existingSubscription =
-            await registration.pushManager
-                .getSubscription();
+          await registration.pushManager
+        .getSubscription();
 
         let subscription =
             existingSubscription;

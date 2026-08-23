@@ -1,0 +1,443 @@
+
+:root {
+    --bg-primary: #ffffff;
+    --bg-secondary: #f5f3f6;
+    --text-primary: #f0f0f0;
+    --text-secondary: #e2e2e2;
+    --card-bg: #FFFFFF;
+    --border-color: #000000;
+}
+
+body.dark-mode {
+    --bg-primary: #0c0c0c;
+    --bg-secondary: #070707;
+    --text-primary: #e4e6eb;
+    --text-secondary: #e4e4e4;
+    --card-bg: #0c0c0c;
+    --border-color: #000000;
+}
+
+body.dark-mode {
+    background-color: var(--bg-secondary);
+}
+
+body.dark-mode .app-container {
+    background-color: var(--bg-secondary);
+}
+
+body.dark-mode .food-card {
+    background: var(--card-bg);
+    border-color: var(--border-color);
+}
+
+body.dark-mode .food-title {
+    color: var(--text-primary);
+}
+
+body.dark-mode .food-desc {
+    color: var(--text-secondary);
+}
+
+body.dark-mode .food-category {
+    background: #3a3a3a;
+    color: var(--text-secondary);
+}
+
+body.dark-mode .food-rating {
+    background: #3a3a3a;
+}
+
+body.dark-mode .food-addons {
+    background: #3a3a3a;
+    color: var(--text-secondary);
+}
+
+body.dark-mode .food-addons strong {
+    color: var(--text-primary);
+}
+
+body.dark-mode .food-addons span {
+    background: #4a4a4a;
+    color: var(--primary);
+}
+
+body.dark-mode .bottom-nav {
+    background: rgba(15, 15, 15, 0.95);
+}
+
+body.dark-mode .nav-item {
+    color: #bec3cc;
+}
+
+body.dark-mode .nav-item.active {
+    color: var(--primary);
+}
+
+body.dark-mode .cart-bottom-sheet {
+    background: var(--card-bg);
+}
+
+body.dark-mode .cart-header {
+    border-bottom-color: var(--border-color);
+}
+
+body.dark-mode .cart-header h2 {
+    background: none !important;
+    -webkit-background-clip: unset !important;
+    background-clip: unset !important;
+    -webkit-text-fill-color: white !important;
+    color: white !important;
+}
+
+
+body.dark-mode .cart-item-card {
+    background: #3a3a3a;
+}
+
+body.dark-mode .cart-item-name {
+    color: var(--text-primary);
+}
+
+body.dark-mode .cart-item-addons {
+    color: var(--text-secondary);
+}
+
+body.dark-mode .cart-item-actions {
+    border-top-color: #4a4a4a;
+}
+
+body.dark-mode .quantity-controls {
+    background: #4a4a4a;
+}
+
+body.dark-mode .qty-btn {
+    background: #5a5a5a;
+    color: var(--text-primary);
+}
+
+body.dark-mode .qty-btn:hover {
+    background: var(--primary);
+}
+
+body.dark-mode .cart-footer {
+    background: var(--card-bg);
+    border-top-color: var(--border-color);
+}
+
+body.dark-mode .cart-total-label {
+    color: var(--text-secondary);
+}
+
+body.dark-mode .checkout-container {
+    background: var(--bg-secondary);
+}
+
+body.dark-mode .order-summary-card {
+    background: var(--card-bg);
+    border-color: var(--border-color);
+}
+
+body.dark-mode .order-summary-header {
+    background: #252525;
+    border-bottom-color: var(--border-color);
+}
+
+body.dark-mode .order-summary-header h3 {
+    color: var(--text-primary);
+}
+
+body.dark-mode .order-item-row {
+    border-bottom-color: var(--border-color);
+}
+
+body.dark-mode .order-item-name {
+    color: var(--text-primary);
+}
+
+body.dark-mode .order-item-price {
+    color: var(--text-primary);
+}
+
+body.dark-mode .order-total-row {
+    background: #252525;
+    border-top-color: var(--border-color);
+}
+
+body.dark-mode .order-total-label {
+    color: var(--text-primary);
+}
+
+body.dark-mode .profile-card-checkout,
+body.dark-mode .form-section-card {
+    background: var(--card-bg);
+    border-color: var(--border-color);
+}
+
+body.dark-mode .profile-card-header,
+body.dark-mode .form-section-header {
+    background: #252525;
+    border-bottom-color: var(--border-color);
+}
+
+body.dark-mode .profile-field-label {
+    color: var(--text-secondary);
+}
+
+body.dark-mode .profile-field-value {
+    color: var(--text-primary);
+}
+
+body.dark-mode .radio-option,
+body.dark-mode .payment-option {
+    background: #3a3a3a;
+}
+
+body.dark-mode .radio-option:hover,
+body.dark-mode .payment-option:hover {
+    background: #4a4a4a;
+}
+
+body.dark-mode .radio-option.selected,
+body.dark-mode .payment-option.selected {
+    background: rgba(255, 123, 49, 0.15);
+}
+
+body.dark-mode .schedule-select,
+body.dark-mode .schedule-time-input input {
+    background: #3a3a3a;
+    border-color: var(--border-color);
+    color: var(--text-primary);
+}
+
+body.dark-mode .profile-card {
+    background: var(--card-bg);
+    border-color: var(--border-color);
+}
+
+body.dark-mode .profile-header {
+    background: linear-gradient(135deg, var(--primary), var(--secondary));
+}
+
+body.dark-mode .profile-form .form-input-profile,
+body.dark-mode .profile-form .form-textarea-profile {
+    background: #3a3a3a;
+    border-color: var(--border-color);
+    color: var(--text-primary);
+}
+
+body.dark-mode .profile-form .form-input-profile:focus,
+body.dark-mode .profile-form .form-textarea-profile:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(255, 123, 49, 0.2);
+}
+
+body.dark-mode .shop-switch-section {
+    background: #252525;
+    border-color: var(--border-color);
+}
+
+body.dark-mode .shop-switch-item {
+    background: #3a3a3a;
+    border-color: var(--border-color);
+}
+
+body.dark-mode .shop-switch-item:hover {
+    background: #4a4a4a;
+}
+
+body.dark-mode .shop-switch-item.active {
+    background: rgba(255, 123, 49, 0.15);
+}
+
+body.dark-mode .btn-back-profile {
+    background: #3a3a3a;
+    color: var(--text-secondary);
+}
+
+body.dark-mode .btn-back-profile:hover {
+    background: #4a4a4a;
+    color: var(--text-primary);
+}
+
+body.dark-mode .logout-section-profile {
+    border-top-color: var(--border-color);
+}
+
+body.dark-mode .btn-logout-profile {
+    background: #3a2a2a;
+    border-color: #5a3a3a;
+}
+
+body.dark-mode .last-updated {
+    background: #252525;
+    color: var(--text-secondary);
+}
+
+body.dark-mode .skeleton {
+    background: linear-gradient(90deg, #3a3a3a 25%, #4a4a4a 50%, #3a3a3a 75%);
+}
+
+body.dark-mode .skeleton-card,
+body.dark-mode .skeleton-order-card {
+    background: var(--card-bg);
+    border-color: var(--border-color);
+}
+
+body.dark-mode .empty-state {
+    color: var(--text-secondary);
+}
+
+body.dark-mode .empty-state i {
+    color: #5a5a5a;
+}
+
+body.dark-mode .modal-overlay .page-modal {
+    background: var(--card-bg);
+}
+
+body.dark-mode .page-content {
+    background: var(--card-bg);
+}
+
+body.dark-mode .form-input,
+body.dark-mode .form-textarea,
+body.dark-mode .form-select {
+    background: #3a3a3a;
+    border-color: var(--border-color);
+    color: var(--text-primary);
+}
+
+body.dark-mode .form-input:focus,
+body.dark-mode .form-textarea:focus {
+    border-color: var(--primary);
+}
+
+body.dark-mode .customer-item,
+body.dark-mode .shop-item-admin {
+    background: var(--card-bg);
+}
+
+body.dark-mode .admin-sidebar {
+    background: var(--card-bg);
+    border-right-color: var(--border-color);
+}
+
+body.dark-mode .sidebar-item:hover {
+    background: #3a3a3a;
+}
+
+body.dark-mode .admin-content {
+    background: var(--bg-secondary);
+}
+
+body.dark-mode .form-section {
+    background: var(--card-bg);
+}
+
+body.dark-mode .addon-management {
+    border-color: var(--border-color);
+}
+
+body.dark-mode .reminder-item {
+    background: var(--card-bg);
+}
+
+body.dark-mode .reminder-item.unread {
+    background: rgba(255, 123, 49, 0.1);
+}
+
+body.dark-mode .order-card {
+    background: var(--card-bg);
+}
+
+body.dark-mode .order-header {
+    background: #252525;
+    border-bottom-color: var(--border-color);
+}
+
+body.dark-mode .order-number {
+    color: var(--text-primary);
+}
+
+body.dark-mode .order-date {
+    color: var(--text-secondary);
+}
+
+body.dark-mode .order-items {
+    border-bottom-color: var(--border-color);
+}
+
+body.dark-mode .order-item .item-name {
+    color: var(--text-primary);
+}
+
+body.dark-mode .order-footer {
+    border-top-color: var(--border-color);
+}
+
+body.dark-mode .order-meta {
+    color: var(--text-secondary);
+}
+
+body.dark-mode .stat-card {
+    background: var(--card-bg);
+    border-color: var(--border-color);
+}
+
+body.dark-mode .stat-label {
+    color: var(--text-secondary);
+}
+
+body.dark-mode .customer-id-badge {
+    background: #252525;
+    border-color: var(--border-color);
+}
+
+body.dark-mode .customer-id-badge span {
+    color: var(--text-secondary);
+}
+
+body.dark-mode .profile-alert-card {
+    background: rgba(255, 123, 49, 0.15);
+    border-color: rgba(255, 123, 49, 0.3);
+}
+
+body.dark-mode .profile-alert-text h4,
+body.dark-mode .profile-alert-text p {
+    color: var(--primary);
+}
+
+body.dark-mode .delivery-fee-badge {
+    background: #252525;
+    color: #66b0ff;
+}
+
+body.dark-mode .info-message {
+    background: #252525;
+}
+
+body.dark-mode .info-message p {
+    color: #66b0ff;
+}
+
+body.dark-mode .btn-continue-shopping-confirm {
+    background: #3a3a3a;
+    border-color: var(--border-color);
+    color: var(--text-secondary);
+}
+
+body.dark-mode .btn-continue-shopping-confirm:hover {
+    background: #4a4a4a;
+    border-color: var(--primary);
+    color: var(--primary);
+}
+
+body.dark-mode .share-btn {
+    color: var(--text-secondary);
+}
+
+body.dark-mode .share-btn:hover {
+    background: #3a3a3a;
+    color: var(--primary);
+}
+    

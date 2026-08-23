@@ -1,0 +1,11834 @@
+
+        
+
+        const supabaseUrl = 'https://lgnthmtdblxwvczzuhom.supabase.co';
+        const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxnbnRobXRkYmx4d3Zjenp1aG9tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc0MTY0MjEsImV4cCI6MjEwMjk5MjQyMX0.JGqbVxUIfxPU3nt6CXudvEl7xqykrNiO4BeuNrsGhRw';
+        const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
+
+        let currentUser = null;
+        let currentShop = null;
+        let userShops = [];
+        let userRole = null;
+        let allShops = [];
+
+        let lastOrderCheck = null;
+        let hasNewOrderAlert = false;
+        let orderSyncInterval = null;
+
+        let isInitialLoad = true;
+        let isHandlingAuth = false;
+
+        
+
+    function initApp() {
+    console.log("App starting...");
+    setupEventListeners();
+    setupAddToCartListeners();
+    checkAuthState();
+    
+    cleanupOldNotifications();
+    
+    setInterval(cleanupOldNotifications, 24 * 60 * 60 * 1000);
+    
+    startOrderSync();
+    
+    document.addEventListener('pageChange', clearAdvertTimer);
+    
+    initDarkMode();
+}
+
+function initDarkMode() {
+    const darkModeToggle = document.getElementById('dark-mode-toggle');
+    
+    const savedMode = localStorage.getItem('darkMode');
+    if (savedMode === 'enabled') {
+        document.body.classList.add('dark-mode');
+        if (darkModeToggle) {
+            darkModeToggle.classList.remove('fa-moon');
+            darkModeToggle.classList.add('fa-sun');
+        }
+    }
+    
+    if (darkModeToggle) {
+        darkModeToggle.addEventListener('click', function() {
+            document.body.classList.toggle('dark-mode');
+            
+            if (document.body.classList.contains('dark-mode')) {
+                localStorage.setItem('darkMode', 'enabled');
+                this.classList.remove('fa-moon');
+                this.classList.add('fa-sun');
+            } else {
+                localStorage.setItem('darkMode', 'disabled');
+                this.classList.remove('fa-sun');
+                this.classList.add('fa-moon');
+            }
+        });
+    }
+}
+
+
+
+
+        function setupEventListeners() {
+        document.getElementById('user-icon').addEventListener('click', function() {
+            if (!currentUser) {
+                signInWithGoogle();
+            } else {
+                showUserProfile();
+            }
+        });
+
+    // document.getElementById('auth-modal-close').addEventListener('click', hideAuthModal);
+    //  document.getElementById('google-login-btn').addEventListener('click', signInWithGoogle);
+    
+    document.getElementById('dev-admin-user-view').addEventListener('click', showUserView);
+    document.getElementById('shop-admin-user-view').addEventListener('click', showUserView);
+    document.getElementById('dev-admin-logout').addEventListener('click', signOutUser);
+    document.getElementById('shop-admin-logout').addEventListener('click', signOutUser);
+    
+    document.getElementById('cart-icon').addEventListener('click', showCartPage);
+
+}
+
+const cartStyles = `
+    .cart-badge {
+        position: absolute;
+        top: -5px;
+        right: -5px;
+        background: #dc3545;
+        color: white;
+        border-radius: 50%;
+        width: 18px;
+        height: 18px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.7rem;
+        font-weight: bold;
+    }
+    
+    .quantity-btn {
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        border: 1px solid #ddd;
+        background: white;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    
+    .quantity-btn:hover {
+        background: #f8f9fa;
+    }
+    
+    .remove-item-btn {
+        color: #dc3545;
+        background: none;
+        border: none;
+        cursor: pointer;
+        padding: 5px;
+    }
+    
+    .order-status {
+        padding: 5px 10px;
+        border-radius: 15px;
+        font-size: 0.8rem;
+        font-weight: bold;
+    }
+    
+    .status-waiting {
+        background: #d1ecf1;
+        color: #0c5460;
+    }
+    
+    .status-preparing {
+        background: #fff3cd;
+        color: #856404;
+    }
+    
+    .status-ready {
+        background: #d4edda;
+        color: #155724;
+    }
+    
+    .status-cancelled {
+        background: #f8d7da;
+        color: #721c24;
+    }
+`;
+
+const styleSheet = document.createElement('style');
+styleSheet.textContent = cartStyles;
+document.head.appendChild(styleSheet);
+
+function checkAuthState() {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session?.user) {
+            currentUser = session.user;
+            updateUserIcon(); 
+            if (isInitialLoad) {
+                console.log("Initial load with existing session");
+                isInitialLoad = false;
+                handleUserLogin(currentUser);
+            }
+        } else {
+            currentUser = null;
+            updateUserIcon(); 
+            showLandingPage();
+        }
+    });
+
+    supabase.auth.onAuthStateChange((event, session) => {
+        console.log("Auth state changed:", event, session?.user?.email);
+        
+        if (isHandlingAuth) {
+            console.log("Already handling auth, skipping");
+            return;
+        }
+        
+        isHandlingAuth = true;
+        
+        try {
+            if (event === 'SIGNED_IN') {
+                if (session?.user) {
+                    if (currentUser?.email === session.user.email) {
+                        console.log("User already logged in, ignoring SIGNED_IN event");
+                        return;
+                    }
+                    
+                    console.log("New sign-in detected");
+                    currentUser = session.user;
+                    updateUserIcon(); 
+                    handleUserLogin(session.user);
+                }
+            } else if (event === 'SIGNED_OUT') {
+                currentUser = null;
+                updateUserIcon(); 
+                showLandingPage();
+            }
+        } finally {
+            setTimeout(() => {
+                isHandlingAuth = false;
+            }, 1000);
+        }
+    });
+}
+
+let isProcessingLogin = false;
+
+        async function handleUserLogin(user) {
+    if (isProcessingLogin) {
+        console.log("Already processing login, skipping");
+        return;
+    }
+    
+    if (currentUser?.email === user.email && userShops.length > 0) {
+        console.log("User already logged in with shops loaded");
+        return;
+    }
+    
+    isProcessingLogin = true;
+    
+    try {
+        updateUserIcon();
+        
+        if (user.email === "cr.xerver@gmail.com") { 
+            await loadDevAdminDashboard();
+            return;
+        }
+        
+        const isAdmin = await checkIfAdmin(user.email);
+        if (isAdmin) {
+            await loadShopAdminDashboard(isAdmin);
+            setTimeout(startOrderSync, 2000);
+            return;
+        }
+        
+        userShops = await getUserRegisteredShops(user.email);
+        
+        if (userShops.length === 0) {
+            showNotRegisteredMessage();
+        } else if (userShops.length === 1) {
+            currentShop = userShops[0];
+            await showMenuPage();
+        } else {
+            showShopSelection();
+        }
+        
+     } catch (error) {
+        console.error("Error handling user login:", error);
+        showLandingPage();
+    } finally {
+        setTimeout(() => {
+            isProcessingLogin = false;
+        }, 2000);
+    }
+}
+
+let shopsLoaded = false;
+
+
+
+function startOrderSync() {
+    if (orderSyncInterval) {
+        clearInterval(orderSyncInterval);
+    }
+    
+    if (!currentShop || !document.getElementById('shop-admin-dashboard').classList.contains('active')) {
+        console.log("Not starting order sync - not in shop admin mode");
+        return;
+    }
+    
+    console.log("Starting real-time order sync for shop:", currentShop.name);
+    
+    checkForNewOrders();
+    
+    orderSyncInterval = setInterval(checkForNewOrders, 5000);
+}
+
+async function checkForNewOrders() {
+     if (!currentShop) return;
+    
+    try {
+        const { data: latestOrder, error } = await supabase
+            .from('orders')
+            .select('created_at')
+            .eq('shop_id', currentShop.id)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .single();
+        
+        if (error && error.code !== 'PGRST116') {
+            console.error("Error checking for new orders:", error);
+            return;
+        }
+        
+        if (latestOrder) {
+            const newTimestamp = new Date(latestOrder.created_at).getTime();
+            
+            if (!lastOrderCheck) {
+                lastOrderCheck = newTimestamp;
+                return;
+            }
+            
+            if (newTimestamp > lastOrderCheck) {
+                console.log("New order detected!");
+                lastOrderCheck = newTimestamp;
+                
+                playNewOrderAlert();
+                
+                showNewOrderNotification();
+                
+                if (document.getElementById('shop-orders')?.classList.contains('active')) {
+                    await loadShopOrders();
+                    await loadShopStats();
+                }
+                
+                if (document.getElementById('shop-dashboard')?.classList.contains('active')) {
+                    await loadShopStats();
+                }
+            }
+        }
+        
+    } catch (error) {
+        console.error("Error in order sync:", error);
+    }
+}
+
+function playNewOrderAlert() {
+    try {
+        const audio = document.getElementById('new-order-alert');
+        if (audio) {
+            audio.currentTime = 0; 
+            audio.play().catch(e => {
+                console.log("Audio play failed (user interaction required):", e);
+            });
+        }
+    } catch (error) {
+        console.error("Error playing alert sound:", error);
+    }
+}
+
+function showNewOrderNotification() {
+    const notification = document.createElement('div');
+    notification.id = 'new-order-notification';
+    notification.style.cssText = `
+        position: fixed;
+        top: 80px;
+        right: 20px;
+        background: linear-gradient(135deg, var(--primary), var(--secondary));
+        color: white;
+        padding: 15px 20px;
+        border-radius: 10px;
+        z-index: 10000;
+        max-width: 300px;
+        animation: slideIn 0.3s ease-out;
+        cursor: pointer;
+    `;
+    
+    notification.innerHTML = `
+        <div style="display: flex; align-items: center; gap: 12px;">
+            <div style="font-size: 1.5rem;">
+                <i class="fas fa-bell"></i>
+            </div>
+            <div>
+                <strong>New Order Received!</strong>
+                <div style="font-size: 0.9rem; margin-top: 3px;">
+                    Click to view new orders
+                </div>
+            </div>
+        </div>
+    `;
+    
+    notification.addEventListener('click', function() {
+        document.querySelectorAll('#shop-admin-dashboard .sidebar-item').forEach(item => {
+            item.classList.remove('active');
+        });
+        document.querySelector('[data-section="shop-orders"]').classList.add('active');
+        
+        loadShopAdminSection('shop-orders');
+        
+        this.remove();
+    });
+    
+    setTimeout(() => {
+        if (notification.parentNode) {
+            notification.style.animation = 'slideOut 0.3s ease-out';
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.remove();
+                }
+            }, 300);
+        }
+    }, 10000);
+    
+    document.body.appendChild(notification);
+    
+    if (!document.getElementById('notification-styles')) {
+        const style = document.createElement('style');
+        style.id = 'notification-styles';
+        style.textContent = `
+            @keyframes slideIn {
+                from {
+                    transform: translateX(100%);
+                    opacity: 0;
+                }
+                to {
+                    transform: translateX(0);
+                    opacity: 1;
+                }
+            }
+            
+            @keyframes slideOut {
+                from {
+                    transform: translateX(0);
+                    opacity: 1;
+                }
+                to {
+                    transform: translateX(100%);
+                    opacity: 0;
+                }
+            }
+        `;
+        document.head.appendChild(style);
+    }
+}
+
+
+     async function checkIfAdmin(email) {
+    try {
+        const { data, error } = await supabase
+            .from('shop_admins')
+            .select('*, shops(*)')
+            .eq('admin_email', email)
+            .maybeSingle(); 
+        
+        if (error && error.code !== 'PGRST116') {
+            console.error("Error checking admin:", error);
+        }
+        
+        return data || null;
+    } catch (error) {
+        console.error("Error checking admin:", error);
+        return null;
+    }
+}
+
+        async function getUserRegisteredShops(email) {
+    if (shopsLoaded && userShops.length > 0 && userShops[0]?.customer_email === email) {
+        console.log("Returning cached shops");
+        return userShops;
+    }
+    
+    try {
+        const { data, error } = await supabase
+            .from('customer_registrations')
+            .select('shops(*)')
+            .eq('customer_email', email);
+        
+        if (error) {
+            console.error("Error getting user shops:", error);
+            return [];
+        }
+        
+        const shops = data.map(item => item.shops).filter(shop => shop !== null);
+        shopsLoaded = true;
+        return shops;
+    } catch (error) {
+        console.error("Error getting user shops:", error);
+        return [];
+    }
+}
+
+        function showLandingPage() {
+
+            setHeaderVisibility(false);
+
+     document.querySelector('.app-header').classList.add('hidden'); 
+
+    const root = document.documentElement;
+    root.style.setProperty('--primary', '#FF7B31');
+    root.style.setProperty('--secondary', '#FFAA53');
+    root.style.setProperty('--accent', '#4CAF50');
+    
+    const mainContent = document.getElementById('main-content');
+    mainContent.innerHTML = `
+        <style>
+            .phone-container {
+                display: flex;
+                justify-content: center;
+                background: #e6e6ea;
+                min-height: 100vh;
+                font-family: 'Poppins', sans-serif;
+            }
+            
+            .phone {
+                width: 390px;
+                height: 800px;
+                background: #000000;
+                border-radius:0px;
+                overflow: hidden;
+                position: relative;
+            }
+            
+            .content {
+                padding: 28px 26px;
+                height: 100%;
+                position: relative;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                text-align: center;
+            }
+            
+            .logo {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                font-weight: 700;
+                font-size: 38px;
+                color: #e57a2f;
+                justify-content: center;
+            }
+            
+            .hero {
+                margin-top: 20px;
+                display: flex;
+                justify-content: center;
+            }
+            
+            .hero img {
+                width: 320px;
+            }
+            
+            .text {
+                margin-top: 20px;
+                max-width: 300px;
+            }
+            
+            .text h2 {
+                font-size: 22px;
+                font-weight: 700;
+                color: #f5f5f5;
+                line-height: 1.3;
+            }
+            
+            .text h2 span {
+                color: #e57a2f;
+            }
+            
+            .dots {
+                margin: 10px 0;
+                color: #e0b68a;
+                letter-spacing: 6px;
+            }
+            
+            .text p {
+                font-size: 14px;
+                color: #e6e6e6;
+                line-height: 1.6;
+            }
+            
+            .footer {
+                position: absolute;
+                bottom: 20px;
+                width: 100%;
+                text-align: center;
+                font-size: 12px;
+                color: #999;
+            }
+            
+            .footer a {
+                color: #999;
+                text-decoration: none;
+                margin: 0 6px;
+            }
+            
+            .footer a:hover {
+                text-decoration: underline;
+            }
+            
+            .container {
+                display: flex;
+                justify-content: center;
+                padding: 10px;
+                width: 100%;
+                margin-top: 20px;
+            }
+            
+            .google-button {
+                background-color: #d30000;
+                color: white;
+                border: none;
+                padding: 12px 24px;
+                border-radius: 40px;
+                font-weight: 500;
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                font-size: 14px;
+                transition: background-color 0.3s;
+            }
+            
+            .google-button:hover {
+                background-color: #3367d6;
+            }
+        </style>
+        
+        <div class="phone-container">
+            <div class="phone">
+                <div class="content">
+
+                    <div class="hero">
+                        <img src="assets/images/devices.png" alt="Chef holding pizza">
+                    </div>
+                    
+                    <div class="text">
+                        <h2>Enjoy Instant <span>Delivery</span> <br> <span>and delicious</span> Food</h2>
+                        <div class="dots">•••</div>
+                        <p>
+                    <p> Fasfood connects you with local shops and restaurants you already love. Order online for pickup or delivery – your favourites, made fresh, whenever you want. </p>                    </div>
+                    
+                    <div class="container">
+                        <button class="google-button" id="landing-login-btn">
+                            <svg width="18" height="18" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+                                <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"></path>
+                                <path fill="#4285F4" d="M46.5 24.5c0-1.57-.15-3.09-.38-4.5H24v9h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.11-10.36 7.11-17.68z"></path>
+                                <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"></path>
+                                <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"></path>
+                            </svg>
+                            Sign in with Google
+                        </button>
+                    </div>
+                    
+                    <div class="footer">
+                        <a href="privacy-policy.html">Privacy Policy</a> | <a href="terms-of-service.html">Terms of Service</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    updateHeaderText();
+    
+    document.getElementById('landing-login-btn').addEventListener('click', signInWithGoogle);
+    document.getElementById('bottom-nav').style.display = 'none';
+    
+    document.getElementById('dev-admin-dashboard').classList.remove('active');
+    document.getElementById('shop-admin-dashboard').classList.remove('active');
+}
+
+        function showNotRegisteredMessage() {
+    setHeaderVisibility(false);
+    
+    const mainContent = document.getElementById('main-content');
+    mainContent.innerHTML = `
+        <style>
+            .not-registered-container {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                min-height: 100vh;
+                padding: 20px;
+                background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
+                font-family: 'Segoe UI', Roboto, system-ui, sans-serif;
+            }
+            
+            .not-registered-card {
+                background: white;
+                border-radius: 0 0 40px 40px;
+                padding: 48px 32px;
+                max-width: 450px;
+                width: 100%;
+                text-align: center;
+                box-shadow: 0 20px 40px rgba(0, 0, 0, 0.08);
+                border: 1px solid rgba(255, 123, 49, 0.1);
+                animation: fadeInUp 0.5s ease;
+            }
+            
+            @keyframes fadeInUp {
+                from {
+                    opacity: 0;
+                    transform: translateY(30px);
+                }
+                to {
+                    opacity: 1;
+                    transform: translateY(0);
+                }
+            }
+            
+            .brand-logo {
+                margin-bottom: 24px;
+            }
+            
+            .brand-logo h1 {
+                font-size: 32px;
+                font-weight: 800;
+                margin: 0;
+                background: linear-gradient(135deg, var(--primary), var(--secondary));
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+                background-clip: text;
+            }
+            
+            .brand-logo p {
+                font-size: 12px;
+                color: #94a3b8;
+                margin: 4px 0 0;
+            }
+            
+            .illustration {
+                margin: 24px 0 32px;
+            }
+            
+            .illustration-icon {
+                width: 120px;
+                height: 120px;
+                background: linear-gradient(135deg, #fff5e8, #ffe8d4);
+                border-radius: 60px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                margin: 0 auto;
+                animation: gentleBounce 2s infinite ease-in-out;
+            }
+            
+            .illustration-icon i {
+                font-size: 56px;
+                color: var(--primary);
+            }
+            
+            .title-section h2 {
+                font-size: 28px;
+                font-weight: 800;
+                margin: 0 0 12px;
+                color: #1e293b;
+            }
+            
+            .title-section p {
+                font-size: 15px;
+                color: #64748b;
+                line-height: 1.5;
+                margin: 0 0 8px;
+            }
+            
+            .info-box {
+                background: linear-gradient(135deg, #f8fafc, #ffffff);
+                border-radius: 24px;
+                padding: 24px;
+                margin: 28px 0;
+                border: 1px solid #eef2f6;
+                text-align: left;
+            }
+            
+            .info-step {
+                display: flex;
+                gap: 14px;
+                margin-bottom: 20px;
+            }
+            
+            .info-step:last-child {
+                margin-bottom: 0;
+            }
+            
+            .step-number {
+                width: 32px;
+                height: 32px;
+                background: linear-gradient(135deg, var(--primary), var(--secondary));
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                color: white;
+                font-weight: 700;
+                font-size: 14px;
+                flex-shrink: 0;
+            }
+            
+            .step-content h4 {
+                margin: 0 0 4px;
+                font-size: 15px;
+                font-weight: 700;
+                color: #1e293b;
+            }
+            
+            .step-content p {
+                margin: 0;
+                font-size: 13px;
+                color: #64748b;
+                line-height: 1.4;
+            }
+            
+            .visit-shop-btn {
+                background: linear-gradient(135deg, var(--primary), var(--secondary));
+                color: white;
+                border: none;
+                padding: 16px 28px;
+                border-radius: 50px;
+                font-weight: 700;
+                font-size: 16px;
+                cursor: pointer;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                gap: 10px;
+                width: 100%;
+                transition: all 0.2s;
+                margin-bottom: 16px;
+            }
+            
+            .visit-shop-btn:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 8px 24px rgba(255, 123, 49, 0.3);
+            }
+            
+            .visit-shop-btn:active {
+                transform: translateY(0);
+            }
+            
+            .sign-out-link {
+                background: none;
+                border: none;
+                color: #94a3b8;
+                font-size: 14px;
+                cursor: pointer;
+                display: inline-flex;
+                align-items: center;
+                gap: 8px;
+                transition: all 0.2s;
+                padding: 12px 20px;
+                border-radius: 40px;
+            }
+            
+            .sign-out-link:hover {
+                color: #dc2626;
+                background: #fef2f2;
+            }
+            
+            .footer-note {
+                margin-top: 24px;
+                padding-top: 20px;
+                border-top: 1px solid #f0f0f0;
+                font-size: 12px;
+                color: #94a3b8;
+            }
+            
+            .footer-note i {
+                color: var(--primary);
+                margin: 0 2px;
+            }
+            
+            @media (max-width: 480px) {
+                .not-registered-card {
+                    padding: 36px 24px;
+                }
+                
+                .illustration-icon {
+                    width: 100px;
+                    height: 100px;
+                }
+                
+                .illustration-icon i {
+                    font-size: 48px;
+                }
+                
+                .title-section h2 {
+                    font-size: 24px;
+                }
+                
+                .info-box {
+                    padding: 20px;
+                }
+            }
+        </style>
+        
+        <div class="not-registered-container">
+            <div class="not-registered-card">
+                <div class="brand-logo">
+                    <h1>Fasfood</h1>
+                    <p>Fresh food, fast delivery</p>
+                </div>
+                
+                <div class="illustration">
+                    <div class="illustration-icon">
+                        <i class="fas fa-store"></i>
+                    </div>
+                </div>
+                
+                <div class="title-section">
+                    <p>Join your favorite local shops and start ordering delicious meals</p>
+                </div>
+                
+                <div class="info-box">
+                    <div class="info-step">
+                        <div class="step-number">1</div>
+                        <div class="step-content">
+                            <h4>Visit a Partner Shop</h4>
+                            <p>Find any Fasfood partner shop near you</p>
+                        </div>
+                    </div>
+                    <div class="info-step">
+                        <div class="step-number">2</div>
+                        <div class="step-content">
+                            <h4>Register Your Account</h4>
+                            <p>Share your email with the shop staff to get registered</p>
+                        </div>
+                    </div>
+                    <div class="info-step">
+                        <div class="step-number">3</div>
+                        <div class="step-content">
+                            <h4>Start Ordering</h4>
+                            <p>Browse menus and place orders from your favorite shops</p>
+                        </div>
+                    </div>
+                </div>
+                
+               
+                <button class="sign-out-link" id="logout-btn">
+                    <i class="fas fa-sign-out-alt"></i>
+                    Sign Out
+                </button>
+                
+                
+            </div>
+        </div>
+    `;
+    
+   
+    
+    document.getElementById('logout-btn').addEventListener('click', signOutUser);
+    
+    document.getElementById('bottom-nav').style.display = 'none';
+}
+
+        function showShopSelection() {
+             setHeaderVisibility(true);
+    const shopSelection = document.getElementById('shop-selection');
+    const shopsList = document.getElementById('available-shops-list');
+    
+    shopsList.innerHTML = userShops.map(shop => `
+        <div class="shop-option" data-shop-id="${shop.id}">
+            <div class="shop-name" style="font-weight: 600; padding-bottom: 10px;">${shop.name}</div>
+            <div class="shop-address">${shop.address}</div>
+        </div>
+    `).join('');
+    
+    updateHeaderText();
+    
+    document.querySelectorAll('.shop-option').forEach(option => {
+        option.addEventListener('click', async function() {
+            const shopId = this.getAttribute('data-shop-id');
+            currentShop = userShops.find(shop => shop.id == shopId);
+            shopSelection.style.display = 'none';
+            await showMenuPage();
+        });
+    });
+    
+    shopSelection.style.display = 'flex';
+}
+
+
+        async function showMenuPage() {
+            setHeaderVisibility(true);
+            showLoading('Loading menu...');
+
+            showMenuSkeleton();
+
+    if (!currentShop) return;
+
+    if (currentShop.suspended) {
+        showSuspendedShopCustomerView();
+        return;
+    }
+    
+    if (currentShop.temporary_closed) {
+        showTemporarilyClosedMessage();
+        return;
+    }
+    
+    if (!isShopOpen(currentShop.working_hours, currentShop.temporary_closed)) {
+        showShopClosedMessage();
+        return;
+    }
+
+    applyShopColors(currentShop);
+    
+    updateHeaderText(currentShop);
+    
+    const { data: menuItems, error } = await supabase
+        .from('menu_items')
+        .select('*')
+        .eq('shop_id', currentShop.id)
+        .eq('is_available', true)
+        .order('category');
+    
+    if (error) {
+        console.error("Error loading menu:", error);
+        return;
+    }
+            
+            const menuItemsWithAddons = await Promise.all(
+                menuItems.map(async (item) => {
+                    const { data: addons } = await supabase
+                        .from('menu_item_addons')
+                        .select('*')
+                        .eq('menu_item_id', item.id);
+                    
+                    return {
+                        ...item,
+                        addons: addons || []
+                    };
+                })
+            );
+            
+            const categories = [...new Set(menuItems.map(item => item.category))];
+            
+            const mainContent = document.getElementById('main-content');
+            mainContent.innerHTML = `
+    <div class="categories-container">
+    <div id="shop-adverts-container" style="display: none; margin-bottom: 15px; width: 100%; border-radius: 12px; overflow: hidden; padding: 0px;">
+        <div id="shop-adverts-slider" style="display: flex; overflow-x: auto; scroll-snap-type: x mandatory; gap: 10px; scrollbar-width: none; -ms-overflow-style: none;">
+                <!-- Contents -->
+        </div>
+        <style>
+            #shop-adverts-slider::-webkit-scrollbar {
+                display: none;
+            }
+            .shop-advert-item {
+                flex: 0 0 auto;
+                width: 100%;
+                scroll-snap-align: start;
+                overflow: hidden;
+                cursor: pointer;
+                transition: transform 0.3s ease;
+            }
+            .shop-advert-item img {
+                width: 100%;
+                height: auto;
+                max-height: 200px;
+                object-fit: cover;
+                display: block;
+            }
+
+            .location-header {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                padding: 12px 16px;
+                background: white;
+                border-radius: 20px;
+                margin-bottom: 16px;
+                border: 1px solid rgba(255, 123, 49, 0.2);
+            }
+
+            .location-icon {
+                font-size: 1.2rem;
+                color: var(--primary);
+            }
+
+            .province-name {
+                font-weight: 600;
+                font-size: 1rem;
+                color: var(--dark);
+                flex: 1;
+            }
+
+            .location-badge {
+                background: linear-gradient(135deg, var(--primary), var(--secondary));
+                color: white;
+                padding: 4px 12px;
+                border-radius: 30px;
+                font-size: 0.7rem;
+                font-weight: 600;
+                letter-spacing: 0.3px;
+            }
+
+            .image-badges {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    right: 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    z-index: 10;
+}
+    
+        </style>
+    </div>
+    <div class="location-header">
+            <i class="fas fa-map-marker-alt location-icon"></i>
+            <span class="province-name">Limpopo</span>
+            <span class="location-badge">Live location</span>
+        </div>
+        
+        <div class="categories" id="categories">
+            <div class="category active" data-category="all">All</div>
+            ${categories.map(cat => 
+                `<div class="category" data-category="${cat}">${cat}</div>`
+            ).join('')}
+        </div>
+
+        <div class="search-container" style="padding: 0 16px 16px 16px; margin-top: 10px; margin-bottom:-10px;">
+            <div class="search-box" style="position: relative;">
+                <i class="fas fa-search" style="position: absolute; left: 15px; top: 50%; transform: translateY(-50%); color: #999; font-size: 16px;"></i>
+                <input type="text" id="menu-search-input" placeholder="Search for food items..." 
+                    style="width: 100%; padding: 14px 15px 14px 45px; border: 1px solid #e0e0e0; border-radius: 50px; font-size: 14px; background: white; outline: none; transition: all 0.3s ease;">
+                <button id="clear-search-btn" style="position: absolute; right: 15px; top: 50%; transform: translateY(-50%); background: none; border: none; color: #999; cursor: pointer; display: none;">
+                    <i class="fas fa-times-circle"></i>
+                </button>
+            </div>
+            <div hidden id="search-results-count" style="font-size: 12px; color: #666; margin-top: 8px; display: none;">
+                <span id="results-count"></span> result(s) found
+            </div>
+        </div>
+    </div>
+    
+    <div class="food-list" id="food-list">
+        ${menuItemsWithAddons.length === 0 ? 
+            '<div style="text-align: center; padding: 60px 20px;"><i class="fas fa-utensils" style="font-size: 48px; color: #ccc; margin-bottom: 16px;"></i><p style="color: #666;">No menu items available</p></div>' :
+            menuItemsWithAddons.map(item => `
+                <div class="food-card" data-category="${item.category}" data-item-id="${item.id}">
+    ${item.badge ? `<div class="food-badge">${item.badge}</div>` : ''}
+    <div class="food-image">
+        ${item.image_url ? 
+            `<img src="${item.image_url}" alt="${item.name}" loading="lazy" />` :
+            `<i class="fas fa-utensils"></i>`
+        }
+            <div class="time-estimate">
+                <span>${item.preparation_time || '15-20'} min</span>
+            </div>
+    </div>
+    <div class="food-content">
+        <div class="food-title">${item.name}</div>
+        <div class="food-price">R${parseFloat(item.price).toFixed(2)}</div>
+        
+        ${item.description ? `
+            <div class="food-desc">${item.description}</div>
+        ` : ''}
+        
+        ${item.addons && item.addons.length > 0 ? `
+            <div class="food-addons">
+                <strong>Add-ons:</strong>
+                ${item.addons.map(addon => `<span>${addon.name}</span>`).join('')}
+            </div>
+        ` : ''}
+        
+        <div class="food-bottom-row">
+            <div class="food-left-group">
+                <div class="food-category">${item.category}</div>
+                ${item.rating ? `
+                    <div class="food-rating">
+                        <span class="rating-star">★</span>
+                        <span>${item.rating}.0 rating</span>
+                    </div>
+                ` : ''}
+            </div>
+            <button class="btn-add">+</button>
+        </div>
+    </div>
+</div>
+            `).join('')
+        }
+    </div>
+`;
+
+setTimeout(() => {
+    attachSearchToMenu();
+}, 100);
+            
+const categoriesContainer = document.getElementById('categories');
+if (categoriesContainer) {
+    const newCategoriesContainer = categoriesContainer.cloneNode(true);
+    categoriesContainer.parentNode.replaceChild(newCategoriesContainer, categoriesContainer);
+    
+    newCategoriesContainer.querySelectorAll('.category').forEach(cat => {
+        cat.addEventListener('click', function(e) {
+            e.preventDefault();
+            
+            newCategoriesContainer.querySelectorAll('.category').forEach(c => {
+                c.classList.remove('active');
+            });
+
+            this.classList.add('active');
+            
+            const category = this.getAttribute('data-category');
+            const foodList = document.getElementById('food-list');
+            const foodCards = document.querySelectorAll('.food-card');
+            
+            if (category === 'all') {
+
+                foodCards.forEach(card => {
+                    card.style.display = '';
+                    card.style.visibility = '';
+                    card.style.opacity = '';
+                });
+            } else {
+
+                foodCards.forEach(card => {
+                    const cardCategory = card.getAttribute('data-category');
+                    if (cardCategory === category) {
+                        card.style.display = '';
+                        card.style.visibility = '';
+                        card.style.opacity = '';
+                    } else {
+                        card.style.display = 'none';
+                        card.style.visibility = 'hidden';
+                        card.style.opacity = '0';
+                    }
+                });
+            }
+            
+            void foodList.offsetHeight;
+            
+            const existingMessage = document.getElementById('no-items-message');
+            if (existingMessage) existingMessage.remove();
+            
+            const visibleCards = Array.from(foodCards).filter(card => card.style.display !== 'none');
+            if (visibleCards.length === 0 && category !== 'all') {
+                const noItemsMsg = document.createElement('div');
+                noItemsMsg.id = 'no-items-message';
+                noItemsMsg.style.cssText = `
+                    text-align: center;
+                    padding: 40px 20px;
+                    color: #6c757d;
+                    font-size: 0.9rem;
+                    width: 100%;
+                `;
+                noItemsMsg.innerHTML = `
+                    <i class="fas fa-utensils" style="font-size: 32px; margin-bottom: 12px; opacity: 0.5; display: block;"></i>
+                    <p>No items in ${category} category</p>
+                `;
+                foodList.appendChild(noItemsMsg);
+            }
+        });
+    });
+}
+
+            ensureBottomNavVisible();
+            
+            document.getElementById('bottom-nav').style.display = 'flex';
+
+            setTimeout(() => {
+    showAdvertsToCustomer(); 
+    loadActiveShopAdverts(); 
+}, 1000);
+
+            setTimeout(hideLoading, 300);
+        }
+
+let searchInput = null;
+let clearSearchBtn = null;
+let searchResultsCount = null;
+let resultsCountSpan = null;
+let allFoodCards = [];
+let currentSearchTerm = '';
+
+function initSearchFunctionality() {
+    searchInput = document.getElementById('menu-search-input');
+    clearSearchBtn = document.getElementById('clear-search-btn');
+    searchResultsCount = document.getElementById('search-results-count');
+    resultsCountSpan = document.getElementById('results-count');
+    
+    if (!searchInput) return;
+    
+    searchInput.addEventListener('input', function(e) {
+        performSearch(e.target.value);
+    });
+    
+    if (clearSearchBtn) {
+        clearSearchBtn.addEventListener('click', function() {
+            searchInput.value = '';
+            performSearch('');
+            searchInput.focus();
+        });
+    }
+}
+
+function performSearch(searchTerm) {
+    currentSearchTerm = searchTerm.trim().toLowerCase();
+    
+    allFoodCards = document.querySelectorAll('.food-card');
+    
+    if (!allFoodCards.length) return;
+    
+    if (currentSearchTerm === '') {
+        allFoodCards.forEach(card => {
+            card.classList.remove('search-hidden');
+        });
+        
+        if (searchResultsCount) {
+            searchResultsCount.style.display = 'none';
+        }
+        
+        if (clearSearchBtn) {
+            clearSearchBtn.style.display = 'none';
+        }
+        
+        removeNoResultsMessage();
+        return;
+    }
+    
+    if (clearSearchBtn) {
+        clearSearchBtn.style.display = 'block';
+    }
+    
+    let visibleCount = 0;
+    
+    allFoodCards.forEach(card => {
+        const titleElement = card.querySelector('.food-title');
+        const descElement = card.querySelector('.food-desc');
+        const categoryElement = card.querySelector('.food-category');
+        
+        const title = titleElement ? titleElement.textContent.toLowerCase() : '';
+        const description = descElement ? descElement.textContent.toLowerCase() : '';
+        const category = categoryElement ? categoryElement.textContent.toLowerCase() : '';
+        
+        const matches = title.includes(currentSearchTerm) || 
+                       description.includes(currentSearchTerm) ||
+                       category.includes(currentSearchTerm);
+        
+        if (matches) {
+            card.classList.remove('search-hidden');
+            visibleCount++;
+        } else {
+            card.classList.add('search-hidden');
+        }
+    });
+    
+    if (searchResultsCount && resultsCountSpan) {
+        resultsCountSpan.textContent = visibleCount;
+        searchResultsCount.style.display = 'block';
+    }
+    
+    if (visibleCount === 0) {
+        showNoResultsMessage(currentSearchTerm);
+    } else {
+        removeNoResultsMessage();
+    }
+    
+    const activeCategory = document.querySelector('.category.active');
+    if (activeCategory && activeCategory.getAttribute('data-category') !== 'all') {
+        const category = activeCategory.getAttribute('data-category');
+        filterByCategoryAndSearch(category, currentSearchTerm);
+    }
+}
+
+function filterByCategoryAndSearch(category, searchTerm) {
+    const foodCards = document.querySelectorAll('.food-card');
+    let visibleCount = 0;
+    
+    foodCards.forEach(card => {
+        const cardCategory = card.getAttribute('data-category');
+        const titleElement = card.querySelector('.food-title');
+        const descElement = card.querySelector('.food-desc');
+        
+        const title = titleElement ? titleElement.textContent.toLowerCase() : '';
+        const description = descElement ? descElement.textContent.toLowerCase() : '';
+        
+        const matchesCategory = category === 'all' || cardCategory === category;
+        const matchesSearch = searchTerm === '' || 
+                             title.includes(searchTerm) || 
+                             description.includes(searchTerm);
+        
+        if (matchesCategory && matchesSearch) {
+            card.classList.remove('search-hidden');
+            visibleCount++;
+        } else {
+            card.classList.add('search-hidden');
+        }
+    });
+    
+    if (searchTerm !== '' && searchResultsCount && resultsCountSpan) {
+        resultsCountSpan.textContent = visibleCount;
+        searchResultsCount.style.display = 'block';
+        
+        if (visibleCount === 0) {
+            showNoResultsMessage(searchTerm);
+        } else {
+            removeNoResultsMessage();
+        }
+    }
+}
+
+function showNoResultsMessage(searchTerm) {
+    removeNoResultsMessage();
+    
+    const foodList = document.getElementById('food-list');
+    if (!foodList) return;
+    
+    const noResultsDiv = document.createElement('div');
+    noResultsDiv.id = 'no-search-results';
+    noResultsDiv.className = 'no-search-results';
+    noResultsDiv.innerHTML = `
+        <i class="fas fa-search"></i>
+        <p>No items found matching "<strong>${escapeHtml(searchTerm)}</strong>"</p>
+        <p style="font-size: 12px; margin-top: 8px;">Try searching for something else</p>
+    `;
+    
+    foodList.appendChild(noResultsDiv);
+}
+
+function removeNoResultsMessage() {
+    const existingMessage = document.getElementById('no-search-results');
+    if (existingMessage) {
+        existingMessage.remove();
+    }
+}
+
+const originalCategoryHandler = function() {
+    const categories = document.querySelectorAll('.category');
+    categories.forEach(cat => {
+        const newCat = cat.cloneNode(true);
+        cat.parentNode.replaceChild(newCat, cat);
+        
+        newCat.addEventListener('click', function(e) {
+            e.preventDefault();
+            
+            document.querySelectorAll('.category').forEach(c => {
+                c.classList.remove('active');
+            });
+            
+            this.classList.add('active');
+            
+            const category = this.getAttribute('data-category');
+            const searchTerm = searchInput ? searchInput.value.trim().toLowerCase() : '';
+            
+            if (category === 'all' && searchTerm === '') {
+                document.querySelectorAll('.food-card').forEach(card => {
+                    card.classList.remove('search-hidden');
+                });
+                removeNoResultsMessage();
+                if (searchResultsCount) searchResultsCount.style.display = 'none';
+            } else if (category === 'all' && searchTerm !== '') {
+                performSearch(searchTerm);
+            } else if (category !== 'all' && searchTerm === '') {
+                document.querySelectorAll('.food-card').forEach(card => {
+                    const cardCategory = card.getAttribute('data-category');
+                    if (cardCategory === category) {
+                        card.classList.remove('search-hidden');
+                    } else {
+                        card.classList.add('search-hidden');
+                    }
+                });
+                removeNoResultsMessage();
+                if (searchResultsCount) searchResultsCount.style.display = 'none';
+            } else {
+                filterByCategoryAndSearch(category, searchTerm);
+            }
+            
+            const foodList = document.getElementById('food-list');
+            if (foodList) {
+                foodList.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        });
+    });
+};
+
+function attachSearchToMenu() {
+    initSearchFunctionality();
+    originalCategoryHandler();
+    
+    const observer = new MutationObserver(function(mutations) {
+        mutations.forEach(function(mutation) {
+            if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+                const newCards = document.querySelectorAll('.food-card');
+                if (newCards.length > 0 && allFoodCards.length !== newCards.length) {
+                    allFoodCards = newCards;
+                    if (currentSearchTerm) {
+                        performSearch(currentSearchTerm);
+                    }
+                }
+            }
+        });
+    });
+    
+    observer.observe(document.getElementById('food-list'), { childList: true, subtree: true });
+}
+
+        function showMenuSkeleton() {
+    const mainContent = document.getElementById('main-content');
+    mainContent.innerHTML = `
+        <div class="categories-container">
+            <div class="skeleton-categories">
+                ${Array(5).fill('<div class="skeleton-category"></div>').join('')}
+            </div>
+        </div>
+        <div class="food-list">
+            ${Array(4).fill(`
+                <div class="skeleton-card">
+                    <div class="skeleton-image"></div>
+                    <div class="skeleton-content">
+                        <div class="skeleton-title"></div>
+                        <div class="skeleton-price"></div>
+                        <div class="skeleton-desc"></div>
+                        <div class="skeleton-meta"></div>
+                    </div>
+                    <div class="skeleton-button"></div>
+                </div>
+            `).join('')}
+        </div>
+    `;
+}
+
+function cleanupOnPageLeave() {
+    stopAdvertSlider();
+}
+
+function getUserProfileImage(user) {
+    if (!user) return null;
+    
+    if (user.user_metadata?.avatar_url) {
+        return user.user_metadata.avatar_url;
+    }
+    
+    if (user.user_metadata?.picture) {
+        return user.user_metadata.picture;
+    }
+    
+    if (user.identities && user.identities.length > 0) {
+        const googleIdentity = user.identities.find(id => id.provider === 'google');
+        if (googleIdentity && googleIdentity.identity_data?.avatar_url) {
+            return googleIdentity.identity_data.avatar_url;
+        }
+        if (googleIdentity && googleIdentity.identity_data?.picture) {
+            return googleIdentity.identity_data.picture;
+        }
+    }
+    
+    return null;
+}
+
+function updateUserIcon() {
+    const userIconElement = document.getElementById('user-icon');
+    if (!userIconElement) return;
+    
+    if (currentUser) {
+        const profileImage = getUserProfileImage(currentUser);
+        
+        if (profileImage) {
+
+            userIconElement.innerHTML = `<img src="${profileImage}" alt="Profile" onerror="this.onerror=null; this.parentElement.innerHTML='<i class=\'fas fa-user-circle\'></i>';">`;
+        } else {
+
+            userIconElement.innerHTML = '<i class="fas fa-user-circle"></i>';
+        }
+    } else {
+
+        userIconElement.innerHTML = '<i class="fas fa-user-circle"></i>';
+    }
+}
+
+async function getAdvertStats(advertId) {
+    try {
+        const { count, error } = await supabase
+            .from('advert_impressions')
+            .select('*', { count: 'exact', head: true })
+            .eq('advert_id', advertId);
+        
+        if (error) throw error;
+        
+        return count || 0;
+    } catch (error) {
+        console.error("Error getting advert stats:", error);
+        return 0;
+    }
+}
+
+function clearAdvertTimer() {
+    if (advertTimer) {
+        clearTimeout(advertTimer);
+        advertTimer = null;
+    }
+    
+    const modal = document.getElementById('advert-modal');
+    if (modal) {
+        modal.remove();
+    }
+}
+
+async function loadShopAdvertsManagement() {
+    try {
+        const { data: adverts, error } = await supabase
+            .from('shop_adverts')
+            .select('*, shops(name)')
+            .order('created_at', { ascending: false });
+        
+        if (error) throw error;
+        
+        const advertsList = document.getElementById('shop-adverts-list');
+        if (!advertsList) return;
+        
+        if (!adverts || adverts.length === 0) {
+            advertsList.innerHTML = `
+                <div class="empty-state">
+                    <i class="fas fa-ad"></i>
+                    <p>No shop adverts created yet</p>
+                </div>
+            `;
+            return;
+        }
+        
+        advertsList.innerHTML = adverts.map(advert => {
+            const now = new Date();
+            const expiresAt = new Date(advert.expires_at);
+            const isExpired = now > expiresAt;
+            
+            return `
+                <div class="advert-item" data-advert-id="${advert.id}">
+                    <div class="advert-header">
+                        <div style="flex: 1;">
+                            <div class="advert-title-small">Shop: ${advert.shops?.name || 'N/A'}</div>
+                            <div style="display: flex; gap: 10px; align-items: center; margin-top: 5px;">
+                                <span class="advert-status-badge ${isExpired ? 'advert-status-inactive' : 'advert-status-active'}">
+                                    ${isExpired ? 'Expired' : 'Active'}
+                                </span>
+                                <span style="color: #666; font-size: 0.8rem;">
+                                    Duration: ${advert.duration_days} days
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div style="margin: 10px 0;">
+                        <img src="${advert.image_url}" alt="Shop advert" style="max-width: 100%; max-height: 100px; border-radius: 5px;" 
+                             onerror="this.src='https://via.placeholder.com/300x100?text=Image+Error'">
+                    </div>
+                    
+                    <div class="advert-dates">
+                        <div><strong>Starts:</strong> ${new Date(advert.starts_at).toLocaleString()}</div>
+                        <div><strong>Expires:</strong> ${new Date(advert.expires_at).toLocaleString()}</div>
+                    </div>
+                    
+                    <div class="advert-actions">
+                        <button class="btn-danger btn-small delete-shop-advert-btn" data-advert-id="${advert.id}">
+                            Delete
+                        </button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+        
+        document.querySelectorAll('.delete-shop-advert-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const advertId = this.getAttribute('data-advert-id');
+                deleteShopAdvert(advertId);
+            });
+        });
+        
+    } catch (error) {
+        console.error("Error loading shop adverts:", error);
+    }
+}
+
+async function createShopAdvert() {
+    const shopId = document.getElementById('shop-advert-shop-select').value;
+    const imageUrl = document.getElementById('shop-advert-image-url').value.trim();
+    const durationDays = parseInt(document.getElementById('shop-advert-duration').value);
+    
+    if (!shopId || !imageUrl || !durationDays) {
+        alert('Please fill in all fields');
+        return;
+    }
+    
+    if (!imageUrl.startsWith('http')) {
+        alert('Please enter a valid image URL starting with http:// or https://');
+        return;
+    }
+    
+    if (durationDays < 1) {
+        alert('Duration must be at least 1 day');
+        return;
+    }
+    
+    const startsAt = new Date();
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + durationDays);
+    
+    try {
+        const { error } = await supabase
+            .from('shop_adverts')
+            .insert([{
+                shop_id: shopId,
+                image_url: imageUrl,
+                duration_days: durationDays,
+                starts_at: startsAt.toISOString(),
+                expires_at: expiresAt.toISOString(),
+                created_by: currentUser.email
+            }]);
+        
+        if (error) throw error;
+        
+        showToast('Shop advert created successfully!');
+        
+        document.getElementById('shop-advert-image-url').value = '';
+        document.getElementById('shop-advert-duration').value = '7';
+        
+        await loadShopAdvertsManagement();
+        
+    } catch (error) {
+        console.error("Error creating shop advert:", error);
+        alert('Error creating advert: ' + error.message);
+    }
+}
+
+async function deleteShopAdvert(advertId) {
+    if (!confirm('Are you sure you want to delete this advert?')) {
+        return;
+    }
+    
+    try {
+        const { error } = await supabase
+            .from('shop_adverts')
+            .delete()
+            .eq('id', advertId);
+        
+        if (error) throw error;
+        
+        showToast('Advert deleted successfully!');
+        await loadShopAdvertsManagement();
+        
+    } catch (error) {
+        console.error("Error deleting advert:", error);
+        alert('Error deleting advert: ' + error.message);
+    }
+}
+
+async function loadActiveShopAdverts() {
+    if (!currentShop) return;
+    
+    try {
+        const now = new Date().toISOString();
+        
+        const { data: adverts, error } = await supabase
+            .from('shop_adverts')
+            .select('*')
+            .eq('shop_id', currentShop.id)
+            .eq('is_active', true)
+            .gte('expires_at', now)
+            .order('created_at', { ascending: false });
+        
+        if (error) throw error;
+        
+        const container = document.getElementById('shop-adverts-container');
+        const slider = document.getElementById('shop-adverts-slider');
+        
+        if (!adverts || adverts.length === 0) {
+            container.style.display = 'none';
+            return;
+        }
+        
+        slider.innerHTML = adverts.map(advert => `
+            <div class="shop-advert-item" onclick="window.open('${advert.image_url}', '_blank')">
+                <img src="${advert.image_url}" alt="Shop Advertisement" loading="lazy"
+                     onerror="this.style.display='none'; this.parentElement.style.display='none';">
+            </div>
+        `).join('');
+        
+        container.style.display = 'block';
+        
+        startAdvertSlider();
+        
+    } catch (error) {
+        console.error("Error loading shop adverts:", error);
+    }
+}
+
+let sliderInterval = null;
+
+function startAdvertSlider() {
+    if (sliderInterval) {
+        clearInterval(sliderInterval);
+    }
+    
+    const slider = document.getElementById('shop-adverts-slider');
+    if (!slider) return;
+    
+    const items = slider.children;
+    if (items.length <= 1) return;
+    
+    let currentIndex = 0;
+    
+    slider.scrollTo({
+        left: 0,
+        behavior: 'instant'
+    });
+    
+    sliderInterval = setInterval(() => {
+        currentIndex = (currentIndex + 1) % items.length;
+        
+        const itemWidth = items[0].offsetWidth;
+        const scrollAmount = itemWidth * currentIndex;
+        
+        slider.scrollTo({
+            left: scrollAmount,
+            behavior: 'smooth'
+        });
+    }, 5000);
+}
+
+function stopAdvertSlider() {
+    if (sliderInterval) {
+        clearInterval(sliderInterval);
+        sliderInterval = null;
+    }
+}
+
+function applyShopColors(shop) {
+    const root = document.documentElement;
+    
+    root.style.setProperty('--primary', shop.primary_color || '#FF7B31');
+    root.style.setProperty('--secondary', shop.secondary_color || '#FFAA53');
+    root.style.setProperty('--accent', shop.accent_color || '#4CAF50');
+    
+    updateHeaderText(shop);
+}
+
+
+        function showSuspendedShopCustomerView() {
+    setHeaderVisibility(true);
+    
+    const mainContent = document.getElementById('main-content');
+    mainContent.innerHTML = `
+        <style>
+            .offline-container {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                min-height: calc(100vh - 140px);
+                padding: 20px;
+                margin-top: 15px;
+                animation: fadeInOffline 0.5s ease;
+            }
+            
+            @keyframes fadeInOffline {
+                from { opacity: 0; transform: translateY(20px); }
+                to { opacity: 1; transform: translateY(0); }
+            }
+            
+            .offline-card {
+                background: white;
+                border-radius: 32px;
+                padding: 40px 32px;
+                max-width: 420px;
+                width: 100%;
+                text-align: center;
+                border: 1px solid #f0f0f0;
+                box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+            }
+            
+            .offline-icon {
+                width: 100px;
+                height: 100px;
+                background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                margin: 0 auto 24px;
+            }
+            
+            .offline-icon i {
+                font-size: 48px;
+                color: #94a3b8;
+            }
+            
+            .offline-card h2 {
+                font-size: 24px;
+                font-weight: 700;
+                margin: 0 0 12px;
+                color: #1e293b;
+            }
+            
+            .offline-card p {
+                color: #64748b;
+                font-size: 15px;
+                line-height: 1.5;
+                margin: 0 0 8px;
+            }
+            
+            .shop-details {
+                background: #f8fafc;
+                border-radius: 20px;
+                padding: 20px;
+                margin: 24px 0;
+                text-align: left;
+            }
+            
+            .shop-detail-item {
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                margin-bottom: 16px;
+            }
+            
+            .shop-detail-item:last-child {
+                margin-bottom: 0;
+            }
+            
+            .shop-detail-icon {
+                width: 40px;
+                height: 40px;
+                background: white;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+            }
+            
+            .shop-detail-icon i {
+                font-size: 18px;
+                color: var(--primary);
+            }
+            
+            .shop-detail-content {
+                flex: 1;
+            }
+            
+            .shop-detail-label {
+                font-size: 11px;
+                color: #94a3b8;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+                margin-bottom: 2px;
+            }
+            
+            .shop-detail-value {
+                font-size: 14px;
+                font-weight: 500;
+                color: #1e293b;
+            }
+            
+            .visit-store-btn {
+                background: linear-gradient(135deg, var(--primary), var(--secondary));
+                color: white;
+                border: none;
+                padding: 14px 24px;
+                border-radius: 40px;
+                font-weight: 600;
+                font-size: 15px;
+                cursor: pointer;
+                display: inline-flex;
+                align-items: center;
+                gap: 10px;
+                transition: all 0.2s;
+                margin: 8px 0;
+                text-decoration: none;
+            }
+            
+            .visit-store-btn:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 8px 20px rgba(255, 123, 49, 0.25);
+            }
+            
+            .message-box {
+                background: #f1f5f9;
+                border-radius: 16px;
+                padding: 16px;
+                margin-top: 20px;
+                text-align: center;
+            }
+            
+            .message-box i {
+                color: var(--primary);
+                margin-right: 8px;
+            }
+            
+            .message-box p {
+                margin: 0;
+                font-size: 13px;
+                color: #475569;
+            }
+            
+            @media (max-width: 480px) {
+                .offline-card {
+                    padding: 32px 24px;
+                }
+                
+                .offline-icon {
+                    width: 80px;
+                    height: 80px;
+                }
+                
+                .offline-icon i {
+                    font-size: 38px;
+                }
+                
+                .offline-card h2 {
+                    font-size: 22px;
+                }
+            }
+        </style>
+        
+        <div class="offline-container">
+            <div class="offline-card">
+                <div class="offline-icon">
+                    <i class="fas fa-store"></i>
+                </div>
+                
+                <h2>Currently Unavailable</h2>
+                <p>This shop is not accepting online orders at the moment</p>
+                
+                <div class="shop-details">
+                    <div class="shop-detail-item">
+                        <div class="shop-detail-icon">
+                            <i class="fas fa-store"></i>
+                        </div>
+                        <div class="shop-detail-content">
+                            <div class="shop-detail-label">Shop</div>
+                            <div class="shop-detail-value">${escapeHtml(currentShop.name)}</div>
+                        </div>
+                    </div>
+                    
+                    ${currentShop.phone_number ? `
+                        <div class="shop-detail-item">
+                            <div class="shop-detail-icon">
+                                <i class="fas fa-phone-alt"></i>
+                            </div>
+                            <div class="shop-detail-content">
+                                <div class="shop-detail-label">Contact</div>
+                                <div class="shop-detail-value">${escapeHtml(currentShop.phone_number)}</div>
+                            </div>
+                        </div>
+                    ` : ''}
+                    
+                    ${currentShop.address ? `
+                        <div class="shop-detail-item">
+                            <div class="shop-detail-icon">
+                                <i class="fas fa-map-marker-alt"></i>
+                            </div>
+                            <div class="shop-detail-content">
+                                <div class="shop-detail-label">Address</div>
+                                <div class="shop-detail-value">${escapeHtml(currentShop.address)}</div>
+                            </div>
+                        </div>
+                    ` : ''}
+                </div>
+                
+                ${currentShop.phone_number ? `
+                    <a href="tel:${currentShop.phone_number}" class="visit-store-btn">
+                        <i class="fas fa-phone-alt"></i>
+                        Call Shop
+                    </a>
+                ` : ''}
+                
+                <div class="message-box">
+                    <i class="fas fa-info-circle"></i>
+                    <p>For assistance, please contact the shop directly or visit our physical location.</p>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.getElementById('bottom-nav').style.display = 'flex';
+}
+
+        async function loadDevAdminDashboard() {
+            setHeaderVisibility(false);
+            const dashboard = document.getElementById('dev-admin-dashboard');
+            dashboard.classList.add('active');
+
+    const root = document.documentElement;
+    root.style.setProperty('--primary', '#FF7B31');
+    root.style.setProperty('--secondary', '#FFAA53');
+    root.style.setProperty('--accent', '#4CAF50');
+    
+
+    updateHeaderText();
+            
+            await loadDevDashboardContent();
+            
+            document.querySelectorAll('#dev-admin-dashboard .sidebar-item').forEach(item => {
+                item.addEventListener('click', async function() {
+                    document.querySelectorAll('#dev-admin-dashboard .sidebar-item').forEach(i => i.classList.remove('active'));
+                    this.classList.add('active');
+                    
+                    const section = this.getAttribute('data-section');
+                    await loadDevAdminSection(section);
+                });
+            });
+        }
+
+        async function loadDevDashboardContent() {
+            const content = document.getElementById('dev-admin-content');
+            content.innerHTML = `
+                <div class="admin-section active" id="dev-dashboard">
+                    <h2>Developer Dashboard</h2>
+                    <p>Welcome to the developer admin panel.</p>
+                    
+                    <div class="stats-container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-top: 20px;">
+                        <div style="background: white; padding: 20px; border-radius: 10px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
+                            <h3 id="total-shops">0</h3>
+                            <p>Total Shops</p>
+                        </div>
+                        <div style="background: white; padding: 20px; border-radius: 10px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
+                            <h3 id="total-customers">0</h3>
+                            <p>Total Customers</p>
+                        </div>
+                        <div style="background: white; padding: 20px; border-radius: 10px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
+                            <h3 id="total-menu-items">0</h3>
+                            <p>Menu Items</p>
+                        </div>
+                    </div>
+
+            <div style="margin-top: 40px; padding: 20px; background: #f8f9fa; border-radius: 10px; border-left: 4px solid #dc3545;">
+                <h4>Monthly Order Management</h4>
+                <p style="color: #666; margin-bottom: 15px;">
+                    Clear all orders from all shops at month end. This will permanently delete all order records.
+                </p>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                    <div>
+                        <label style="display: block; margin-bottom: 5px; font-weight: 600;">Start Date</label>
+                        <input type="date" id="clear-start-date" class="form-input">
+                    </div>
+                    <div>
+                        <label style="display: block; margin-bottom: 5px; font-weight: 600;">End Date</label>
+                        <input type="date" id="clear-end-date" class="form-input">
+                    </div>
+                </div>
+                
+                <div style="display: flex; gap: 10px;">
+                    <button class="btn-danger" id="clear-orders-btn" style="flex: 1;">
+                        <i class="fas fa-trash-alt"></i> Clear All Orders (Selected Period)
+                    </button>
+                    <button class="btn-secondary" id="preview-clear-btn" style="flex: 1;">
+                        <i class="fas fa-eye"></i> Preview Orders to Clear
+                    </button>
+                </div>
+                
+                <div id="clear-orders-preview" style="margin-top: 20px; display: none;">
+                <!-- Contents -->
+                </div>
+            </div>
+                </div>
+
+                <div class="admin-section" id="shop-management">
+            <h2>Shop Management</h2>
+            
+            <div class="form-section">
+                <h4>Shop Information</h4>
+                <div class="form-group">
+                    <label class="form-label">Shop Name *</label>
+                    <input type="text" class="form-input" id="shop-name" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Phone Number</label>
+                    <input type="tel" class="form-input" id="shop-phone">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Email</label>
+                    <input type="email" class="form-input" id="shop-email">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Address</label>
+                    <textarea class="form-textarea" id="shop-address"></textarea>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Admin Email *</label>
+                    <input type="email" class="form-input" id="admin-email" placeholder="Shop admin email" required>
+                </div>
+            </div>
+            
+            <div class="form-section">
+                <h4>Shop Color Theme</h4>
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                    <div class="form-group">
+                        <label class="form-label">Primary Color</label>
+                        <div style="display: flex; gap: 10px; align-items: center;">
+                            <input type="color" id="shop-primary-color" value="#FF7B31" 
+                                   style="width: 40px; height: 40px; border: none; border-radius: 5px; cursor: pointer;">
+                            <input type="text" class="form-input" id="shop-primary-color-hex" 
+                                   value="#FF7B31" placeholder="#FF7B31" style="flex: 1;">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Secondary Color</label>
+                        <div style="display: flex; gap: 10px; align-items: center;">
+                            <input type="color" id="shop-secondary-color" value="#FFAA53" 
+                                   style="width: 40px; height: 40px; border: none; border-radius: 5px; cursor: pointer;">
+                            <input type="text" class="form-input" id="shop-secondary-color-hex" 
+                                   value="#FFAA53" placeholder="#FFAA53" style="flex: 1;">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Accent Color</label>
+                        <div style="display: flex; gap: 10px; align-items: center;">
+                            <input type="color" id="shop-accent-color" value="#4CAF50" 
+                                   style="width: 40px; height: 40px; border: none; border-radius: 5px; cursor: pointer;">
+                            <input type="text" class="form-input" id="shop-accent-color-hex" 
+                                   value="#4CAF50" placeholder="#4CAF50" style="flex: 1;">
+                        </div>
+                    </div>
+                </div>
+                
+                <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                    <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 10px;">
+                        <div style="width: 40px; height: 40px; border-radius: 8px; background: #FF7B31;" id="color-preview-primary"></div>
+                        <div style="width: 40px; height: 40px; border-radius: 8px; background: #FFAA53;" id="color-preview-secondary"></div>
+                        <div style="width: 40px; height: 40px; border-radius: 8px; background: #4CAF50;" id="color-preview-accent"></div>
+                        <div>
+                            <strong>Preview:</strong> This is how the colors will look
+                        </div>
+                    </div>
+                    <div style="padding: 10px 15px; background: linear-gradient(135deg, #FF7B31, #FFAA53); color: white; border-radius: 8px; margin-bottom: 10px; font-weight: bold; text-align: center;" id="gradient-preview">
+                        Shop Header Preview
+                    </div>
+                    <div style="background: white; padding: 10px 15px; border-radius: 8px; border-left: 4px solid #4CAF50; color: #666;" id="accent-preview">
+                        This is how accent color will appear
+                    </div>
+                </div>
+            </div>
+                    
+                    <div class="form-section">
+                        <h4>Initial Menu Items</h4>
+                        <div id="menu-items-container">
+                            <div class="menu-item-form">
+                                <div class="form-group">
+                                    <label class="form-label">Item Name</label>
+                                    <input type="text" class="form-input menu-item-name" placeholder="e.g., Classic Beef Burger">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Description</label>
+                                    <textarea class="form-textarea menu-item-desc" placeholder="Juicy beef patty with fresh lettuce, tomato..."></textarea>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Price (Rands)</label>
+                                    <input type="number" step="0.01" class="form-input menu-item-price" placeholder="65.99">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Category</label>
+                                    <input type="text" class="form-input menu-item-category" placeholder="Burgers">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Image URL</label>
+                                    <input type="text" class="form-input menu-item-image" placeholder="https://images.unsplash.com/photo-...">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Badge (Optional)</label>
+                                    <input type="text" class="form-input menu-item-badge" placeholder="Popular">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Rating (Optional)</label>
+                                    <input type="number" step="0.1" min="0" max="5" class="form-input menu-item-rating" placeholder="4.8">
+                                </div>
+
+                                <div class="form-group">
+                                    <label class="form-label">Preparation Time *</label>
+                                    <input type="text" class="form-input" id="new-item-prep-time" placeholder="e.g., 15-20 min" value="15-30">
+                                    <small style="color: #666; display: block; margin-top: 5px;">
+                                        Format: "15-20 min" or "25-30 min" - this will show on customer menu
+                                    </small>
+                                </div>
+                                
+                                <div class="addon-management">
+                                    <h5>Add-ons (Optional) - No additional cost</h5>
+                                    <div class="addons-container">
+                                        <div class="addon-item">
+                                            <input type="text" class="addon-input" placeholder="Extra Cheese">
+                                            <button type="button" class="btn-secondary btn-small remove-addon">Remove</button>
+                                        </div>
+                                    </div>
+                                    <button type="button" class="btn-secondary btn-small" onclick="addAddonField(this)">Add Add-on</button>
+                                </div>
+                                
+                                <button type="button" class="btn-secondary" onclick="removeMenuItem(this)" style="margin-top: 10px;">Remove Item</button>
+                            </div>
+                        </div>
+                        <button type="button" class="btn-secondary" onclick="addMenuItemForm()" style="margin: 15px 0;">Add Another Menu Item</button>
+                    </div>
+                    
+                    <button class="btn-primary" id="create-shop-btn">Create Shop with Menu</button>
+                    
+                    <h3 style="margin-top: 30px;">Existing Shops</h3>
+                    <div class="shop-list-admin" id="shops-list">
+                        <!-- Contents -->
+                    </div>
+                </div>
+                <div class="admin-section" id="reminder-management">
+                        <h2>Send Reminders to Shops</h2>
+                        
+                        <div class="reminder-form">
+                            <div class="form-group">
+                                <label class="form-label">Select Shop</label>
+                                <select class="form-input" id="reminder-shop-select">
+                                    <option value="">Select a shop</option>
+                                </select>
+                            </div>
+
+                                <div class="form-group">
+                                    <label class="form-label">Reminder Type</label>
+                                    <select class="form-input" id="reminder-type">
+                                        <option value="payment_due">Payment Due</option>
+                                        <option value="update">Update Required</option>
+                                        <option value="maintenance">Maintenance</option>
+                                        <option value="general">General</option>
+                                    </select>
+                                </div>
+                            
+                            <div class="form-group">
+                                <label class="form-label">Message</label>
+                                <textarea class="form-textarea" id="reminder-message" placeholder="Enter your message..." rows="4"></textarea>
+                            </div>
+                            
+                           <button class="btn-primary" id="send-reminder-btn">Send Reminder</button>
+                        </div>
+                    </div>
+
+                    
+
+    <div class="admin-section" id="advert-management">
+    <h2>Advert Management</h2>
+    
+    <div style="display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 2px solid #e9ecef;">
+        <button class="btn-secondary advert-tab-btn active" data-tab="regular">Regular Adverts</button>
+        <button class="btn-secondary advert-tab-btn" data-tab="shop">Shop Ads 2.0</button>
+    </div>
+    
+    <div id="regular-adverts-section" class="advert-tab-content">
+        <div class="form-section">
+            <h4>Create New Regular Advert</h4>
+                <!-- Contents -->
+            <div class="form-group">
+                <label class="form-label">Advert Title *</label>
+                <input type="text" class="form-input" id="advert-title" placeholder="Enter advert title">
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">Description (Optional)</label>
+                <textarea class="form-textarea" id="advert-description" placeholder="Enter advert description"></textarea>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">Image URL *</label>
+                <input type="text" class="form-input" id="advert-image-url" placeholder="https://example.com/image.jpg">
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">Advert Type *</label>
+                <select class="form-input" id="advert-type">
+                    <option value="all_shops">All Shops (All customers)</option>
+                    <option value="specific_shop">Specific Shop</option>
+                </select>
+            </div>
+            
+            <div class="form-group" id="advert-shop-select-group" style="display: none;">
+                <label class="form-label">Select Shop *</label>
+                <select class="form-input" id="advert-shop-select">
+                    <option value="">Select a shop</option>
+                </select>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                <div class="form-group">
+                    <label class="form-label">Display Delay (seconds)</label>
+                    <input type="number" class="form-input" id="advert-delay" value="10" min="1" max="60">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Show Duration (seconds)</label>
+                    <input type="number" class="form-input" id="advert-duration" value="10" min="1" max="60">
+                </div>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                <div class="form-group">
+                    <label class="form-label">Start Date</label>
+                    <input type="datetime-local" class="form-input" id="advert-start-date">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">End Date (Optional)</label>
+                    <input type="datetime-local" class="form-input" id="advert-end-date">
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">Priority</label>
+                <input type="number" class="form-input" id="advert-priority" value="1" min="1" max="10">
+            </div>
+            
+            <button class="btn-primary" id="create-advert-btn">Create Regular Advert</button>
+        </div>
+        
+        <h3 style="margin-top: 30px;">Active Regular Adverts</h3>
+        <div id="adverts-list">
+                <!-- Contents -->
+        </div>
+    </div>
+    
+    <div id="shop-adverts-section" class="advert-tab-content" style="display: none;">
+        <div class="form-section">
+            <h4>Create Shop Advert (Ads 2.0)</h4>
+            <p style="color: #666; margin-bottom: 20px;">
+                These adverts show only images with no text, no display duration, and stay active until expiry.
+            </p>
+            
+            <div class="form-group">
+                <label class="form-label">Select Shop *</label>
+                <select class="form-input" id="shop-advert-shop-select">
+                    <option value="">Select a shop</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">Image URL *</label>
+                <input type="text" class="form-input" id="shop-advert-image-url" placeholder="https://example.com/advert-image.jpg">
+                <small style="color: #666; display: block; margin-top: 5px;">
+                    Enter the full URL of the advert image (no text will be displayed)
+                </small>
+            </div>
+            
+            <div class="form-group">
+                <label class="form-label">Display Duration (days) *</label>
+                <input type="number" class="form-input" id="shop-advert-duration" value="7" min="1" max="365">
+                <small style="color: #666; display: block; margin-top: 5px;">
+                    How many days the advert will be visible
+                </small>
+            </div>
+            
+            <button class="btn-primary" id="create-shop-advert-btn">Create Shop Advert</button>
+        </div>
+        
+        <h3 style="margin-top: 30px;">All Shop Adverts</h3>
+        <div id="shop-adverts-list">
+                <!-- Contents -->
+        </div>
+    </div>
+</div>
+
+                <div class="admin-section" id="menu-management">
+                    <h2>Menu Management</h2>
+                    <div class="form-group">
+                        <label class="form-label">Select Shop</label>
+                        <select class="form-input" id="shop-select-menu">
+                            <option value="">Select a shop</option>
+                        </select>
+                    </div>
+                    
+                    <div  id="shop-menu-content" style="display: none;">
+                        <div class="form-section">
+                            <h4>Add New Menu Item</h4>
+                            <div class="form-group">
+                                <label class="form-label">Item Name *</label>
+                                <input type="text" class="form-input" id="new-item-name">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Description</label>
+                                <textarea class="form-textarea" id="new-item-desc"></textarea>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Price (Rands) *</label>
+                                <input type="number" step="0.01" class="form-input" id="new-item-price">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Category *</label>
+                                <input type="text" class="form-input" id="new-item-category">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Image URL</label>
+                                <input type="text" class="form-input" id="new-item-image">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Badge (Optional)</label>
+                                <input type="text" class="form-input" id="new-item-badge" placeholder="e.g., Popular, New, etc.">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Rating (Optional)</label>
+                                <input type="number" step="0.1" min="0" max="5" class="form-input" id="new-item-rating" placeholder="0-5">
+                            </div>
+                            
+                            <div class="addon-management">
+                                <h5>Add-ons (Optional) - No additional cost</h5>
+                                <div class="addons-container" id="new-addons-container">
+                                    <div class="addon-item">
+                                        <input type="text" class="addon-input new-addon-name" placeholder="Add-on name">
+                                        <button type="button" class="btn-secondary btn-small remove-addon">Remove</button>
+                                    </div>
+                                </div>
+                                <button type="button" class="btn-secondary btn-small" onclick="addNewAddonField()">Add Add-on</button>
+                            </div>
+                            
+                            <button class="btn-primary" id="add-new-menu-item-btn">Add Menu Item</button>
+                        </div>
+                        
+                        <h3 style="margin-top: 30px;">Current Menu Items</h3>
+                        <div class="menu-items-grid" id="dev-menu-items-list">
+                             <!-- Contents -->
+                        </div>
+                    </div>
+                </div>
+                <div class="admin-section" id="customer-management">
+                    <h2>All Customers</h2>
+                    <div class="customer-list" id="all-customers-list">
+                <!-- Contents -->
+                    </div>
+                </div>
+            `;
+
+    setupColorPicker();
+
+    setupOrderClearing();
+
+            document.getElementById('send-reminder-btn').addEventListener('click', sendReminder);
+            
+            await loadAllShops();
+            await loadAllCustomers();
+            await loadDevStats();
+
+populateAdvertShopSelects();
+
+document.querySelectorAll('.advert-tab-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+        document.querySelectorAll('.advert-tab-btn').forEach(b => b.classList.remove('active'));
+        this.classList.add('active');
+        
+        const tab = this.getAttribute('data-tab');
+        document.getElementById('regular-adverts-section').style.display = tab === 'regular' ? 'block' : 'none';
+        document.getElementById('shop-adverts-section').style.display = tab === 'shop' ? 'block' : 'none';
+        
+        if (tab === 'shop') {
+            loadShopAdvertsManagement();
+        } else {
+            loadAdvertsList();
+        }
+    });
+});
+
+document.getElementById('create-shop-advert-btn').addEventListener('click', createShopAdvert);
+            
+            document.getElementById('create-shop-btn').addEventListener('click', createShopWithMenu);
+            
+            document.getElementById('shop-select-menu').addEventListener('change', function() {
+                const shopId = this.value;
+                if (shopId) {
+                    document.getElementById('shop-menu-content').style.display = 'block';
+                    loadShopMenuForDev(shopId);
+                } else {
+                    document.getElementById('shop-menu-content').style.display = 'none';
+                }
+            });
+            
+            document.getElementById('add-new-menu-item-btn').addEventListener('click', addNewMenuItem);
+        }
+
+        window.addMenuItemForm = function() {
+            const container = document.getElementById('menu-items-container');
+            const newItem = document.createElement('div');
+            newItem.className = 'menu-item-form';
+            newItem.innerHTML = `
+                <div class="form-group">
+                    <label class="form-label">Item Name</label>
+                    <input type="text" class="form-input menu-item-name" placeholder="e.g., Margherita Pizza">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Description</label>
+                    <textarea class="form-textarea menu-item-desc" placeholder="Classic pizza with homemade tomato sauce..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Price (Rands)</label>
+                    <input type="number" step="0.01" class="form-input menu-item-price" placeholder="89.99">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Category</label>
+                    <input type="text" class="form-input menu-item-category" placeholder="Pizza">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Image URL</label>
+                    <input type="text" class="form-input menu-item-image" placeholder="https://images.unsplash.com/photo-...">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Badge (Optional)</label>
+                    <input type="text" class="form-input menu-item-badge" placeholder="Popular">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Rating (Optional)</label>
+                    <input type="number" step="0.1" min="0" max="5" class="form-input menu-item-rating" placeholder="4.7">
+                </div>
+                
+                <div class="addon-management">
+                    <h5>Add-ons (Optional) - No additional cost</h5>
+                    <div class="addons-container">
+                        <div class="addon-item">
+                            <input type="text" class="addon-input" placeholder="Extra Cheese">
+                            <button type="button" class="btn-secondary btn-small remove-addon">Remove</button>
+                        </div>
+                    </div>
+                    <button type="button" class="btn-secondary btn-small" onclick="addAddonField(this)">Add Add-on</button>
+                </div>
+                
+                <button type="button" class="btn-secondary" onclick="removeMenuItem(this)" style="margin-top: 10px;">Remove Item</button>
+            `;
+            container.appendChild(newItem);
+        };
+
+        window.removeMenuItem = function(button) {
+            if (document.querySelectorAll('.menu-item-form').length > 1) {
+                button.closest('.menu-item-form').remove();
+            } else {
+                alert('At least one menu item is required');
+            }
+        };
+
+        window.addAddonField = function(button) {
+            const addonsContainer = button.previousElementSibling;
+            const newAddon = document.createElement('div');
+            newAddon.className = 'addon-item';
+            newAddon.innerHTML = `
+                <input type="text" class="addon-input" placeholder="Add-on name">
+                <button type="button" class="btn-secondary btn-small remove-addon">Remove</button>
+            `;
+            addonsContainer.appendChild(newAddon);
+            
+            newAddon.querySelector('.remove-addon').addEventListener('click', function() {
+                newAddon.remove();
+            });
+        };
+
+        window.addNewAddonField = function() {
+            const container = document.getElementById('new-addons-container');
+            const newAddon = document.createElement('div');
+            newAddon.className = 'addon-item';
+            newAddon.innerHTML = `
+                <input type="text" class="addon-input new-addon-name" placeholder="Add-on name">
+                <button type="button" class="btn-secondary btn-small remove-addon">Remove</button>
+            `;
+            container.appendChild(newAddon);
+        };
+
+        document.addEventListener('click', function(e) {
+            if (e.target.classList.contains('remove-addon')) {
+                if (e.target.closest('.addons-container').querySelectorAll('.addon-item').length > 1) {
+                    e.target.closest('.addon-item').remove();
+                } else {
+                    alert('At least one add-on field is required');
+                }
+            }
+        });
+
+        function populateAdvertShopSelects() {
+    const regularShopSelect = document.getElementById('advert-shop-select');
+    if (regularShopSelect) {
+        regularShopSelect.innerHTML = '<option value="">Select a shop</option>' + 
+            allShops.map(shop => `<option value="${shop.id}">${shop.name}</option>`).join('');
+    }
+    
+    const shopAdvertSelect = document.getElementById('shop-advert-shop-select');
+    if (shopAdvertSelect) {
+        shopAdvertSelect.innerHTML = '<option value="">Select a shop</option>' + 
+            allShops.map(shop => `<option value="${shop.id}">${shop.name}</option>`).join('');
+    }
+}
+
+        async function setupOrderClearing() {
+            document.getElementById('clear-orders-btn').addEventListener('click', clearAllOrders);
+            document.getElementById('preview-clear-btn').addEventListener('click', previewOrdersToClear);
+        }
+
+        async function previewOrdersToClear() {
+            const startDate = document.getElementById('clear-start-date').value;
+            const endDate = document.getElementById('clear-end-date').value;
+            
+            if (!startDate || !endDate) {
+                alert('Please select both start and end dates');
+                return;
+            }
+            
+            try {
+                showLoading('Loading orders...');
+                
+                const { data: orders, error } = await supabase
+                    .from('orders')
+                    .select('*, shops(name)')
+                    .gte('created_at', startDate + 'T00:00:00')
+                    .lte('created_at', endDate + 'T23:59:59')
+                    .order('created_at', { ascending: false });
+                
+                if (error) throw error;
+                
+                if (!orders || orders.length === 0) {
+                    const previewDiv = document.getElementById('clear-orders-preview');
+                    previewDiv.innerHTML = `
+                        <div style="background: white; padding: 20px; border-radius: 8px; text-align: center;">
+                            <i class="fas fa-check-circle" style="font-size: 2rem; color: #28a745; margin-bottom: 10px;"></i>
+                            <p>No orders found in the selected period.</p>
+                        </div>
+                    `;
+                    previewDiv.style.display = 'block';
+                    hideLoading();
+                    return;
+                }
+                
+                const totalOrders = orders.length;
+                const totalAmount = orders
+                    .filter(order => order.status !== 'cancelled')
+                    .reduce((sum, order) => sum + parseFloat(order.total_amount), 0);
+                
+                const cancelledOrders = orders.filter(order => order.status === 'cancelled').length;
+                
+                const previewDiv = document.getElementById('clear-orders-preview');
+                previewDiv.innerHTML = `
+                    <div style="background: white; padding: 20px; border-radius: 8px; border: 1px solid #dee2e6;">
+                        <h5 style="margin-top: 0; color: #dc3545;">Orders to be Cleared</h5>
+                        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 20px;">
+                            <div style="text-align: center; padding: 10px; background: #f8f9fa; border-radius: 5px;">
+                                <div style="font-size: 1.5rem; font-weight: bold; color: var(--primary);">${totalOrders}</div>
+                                <div style="font-size: 0.8rem; color: #666;">Total Orders</div>
+                            </div>
+                            <div style="text-align: center; padding: 10px; background: #f8f9fa; border-radius: 5px;">
+                                <div style="font-size: 1.5rem; font-weight: bold; color: var(--accent);">R${totalAmount.toFixed(2)}</div>
+                                <div style="font-size: 0.8rem; color: #666;">Total Amount</div>
+                            </div>
+                            <div style="text-align: center; padding: 10px; background: #f8f9fa; border-radius: 5px;">
+                                <div style="font-size: 1.5rem; font-weight: bold; color: #dc3545;">${cancelledOrders}</div>
+                                <div style="font-size: 0.8rem; color: #666;">Cancelled Orders</div>
+                            </div>
+                        </div>
+                        
+                        <div style="max-height: 300px; overflow-y: auto;">
+                            <table style="width: 100%; border-collapse: collapse;">
+                                <thead>
+                                    <tr style="background: #f8f9fa;">
+                                        <th style="padding: 8px; text-align: left; border-bottom: 1px solid #dee2e6;">Order #</th>
+                                        <th style="padding: 8px; text-align: left; border-bottom: 1px solid #dee2e6;">Shop</th>
+                                        <th style="padding: 8px; text-align: left; border-bottom: 1px solid #dee2e6;">Amount</th>
+                                        <th style="padding: 8px; text-align: left; border-bottom: 1px solid #dee2e6;">Status</th>
+                                        <th style="padding: 8px; text-align: left; border-bottom: 1px solid #dee2e6;">Date</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${orders.slice(0, 10).map(order => `
+                                        <tr>
+                                            <td style="padding: 8px; border-bottom: 1px solid #f0f0f0;">${order.order_number}</td>
+                                            <td style="padding: 8px; border-bottom: 1px solid #f0f0f0;">${order.shops?.name || 'N/A'}</td>
+                                            <td style="padding: 8px; border-bottom: 1px solid #f0f0f0;">R${parseFloat(order.total_amount).toFixed(2)}</td>
+                                            <td style="padding: 8px; border-bottom: 1px solid #f0f0f0;">
+                                                <span class="order-status ${order.status}" style="padding: 2px 6px; border-radius: 12px; font-size: 0.7rem;">
+                                                    ${order.status}
+                                                </span>
+                                            </td>
+                                            <td style="padding: 8px; border-bottom: 1px solid #f0f0f0;">
+                                                ${new Date(order.created_at).toLocaleDateString()}
+                                            </td>
+                                        </tr>
+                                    `).join('')}
+                                    ${orders.length > 10 ? `
+                                        <tr>
+                                            <td colspan="5" style="padding: 10px; text-align: center; color: #666;">
+                                                ... and ${orders.length - 10} more orders
+                                            </td>
+                                        </tr>
+                                    ` : ''}
+                                </tbody>
+                            </table>
+                        </div>
+                        
+                        <div style="margin-top: 20px; padding: 15px; background: #fff3cd; border-radius: 5px; border: 1px solid #ffeaa7;">
+                            <p style="margin: 0; color: #856404;">
+                                <i class="fas fa-exclamation-triangle"></i>
+                                <strong>Warning:</strong> This action will permanently delete ${totalOrders} orders. This cannot be undone.
+                            </p>
+                        </div>
+                    </div>
+                `;
+                previewDiv.style.display = 'block';
+                
+                hideLoading();
+                
+            } catch (error) {
+                console.error("Error previewing orders:", error);
+                hideLoading();
+                showToast('Error loading orders', 'error');
+            }
+        }
+
+async function clearAllOrders() {
+    const startDate = document.getElementById('clear-start-date').value;
+    const endDate = document.getElementById('clear-end-date').value;
+    
+    if (!startDate || !endDate) {
+        alert('Please select both start and end dates');
+        return;
+    }
+    
+    if (!confirm('Are you absolutely sure you want to delete ALL orders within this period? This action cannot be undone!')) {
+        return;
+    }
+    
+    if (!confirm('SECOND CONFIRMATION: This will permanently delete all order data. Are you 100% sure?')) {
+        return;
+    }
+    
+    try {
+        showLoading('Deleting orders...');
+        
+        const { error, count } = await supabase
+            .from('orders')
+            .delete()
+            .gte('created_at', startDate + 'T00:00:00')
+            .lte('created_at', endDate + 'T23:59:59')
+            .select('*', { count: 'exact' });
+        
+        if (error) throw error;
+        
+        showToast(`Successfully cleared ${count || 0} orders!`);
+        
+        document.getElementById('clear-start-date').value = '';
+        document.getElementById('clear-end-date').value = '';
+        document.getElementById('clear-orders-preview').style.display = 'none';
+        
+        hideLoading();
+        
+    } catch (error) {
+        console.error("Error clearing orders:", error);
+        hideLoading();
+        showToast('Error clearing orders: ' + error.message, 'error');
+    }
+}
+
+function setupColorPicker() {
+    const colorInputs = ['primary', 'secondary', 'accent'];
+    
+    colorInputs.forEach(color => {
+        document.getElementById(`shop-${color}-color`).addEventListener('input', function() {
+            const hexValue = this.value;
+            document.getElementById(`shop-${color}-color-hex`).value = hexValue;
+            updateColorPreview();
+        });
+        
+        document.getElementById(`shop-${color}-color-hex`).addEventListener('input', function() {
+            let hexValue = this.value;
+            if (!hexValue.startsWith('#')) {
+                hexValue = '#' + hexValue;
+                this.value = hexValue;
+            }
+            if (/^#[0-9A-F]{6}$/i.test(hexValue)) {
+                document.getElementById(`shop-${color}-color`).value = hexValue;
+                updateColorPreview();
+            }
+        });
+    });
+    
+    updateColorPreview();
+}
+
+function updateColorPreview() {
+    const primaryColor = document.getElementById('shop-primary-color').value;
+    const secondaryColor = document.getElementById('shop-secondary-color').value;
+    const accentColor = document.getElementById('shop-accent-color').value;
+    
+    document.getElementById('color-preview-primary').style.background = primaryColor;
+    document.getElementById('color-preview-secondary').style.background = secondaryColor;
+    document.getElementById('color-preview-accent').style.background = accentColor;
+    
+    const gradientPreview = document.getElementById('gradient-preview');
+    gradientPreview.style.background = `linear-gradient(135deg, ${primaryColor}, ${secondaryColor})`;
+    
+    const accentPreview = document.getElementById('accent-preview');
+    accentPreview.style.borderLeftColor = accentColor;
+    accentPreview.style.color = accentColor;
+}
+
+        async function loadDevStats() {
+            const { count: shopsCount, error: shopsError } = await supabase
+                .from('shops')
+                .select('*', { count: 'exact', head: true });
+            
+            const { count: customersCount, error: customersError } = await supabase
+                .from('customer_registrations')
+                .select('*', { count: 'exact', head: true });
+            
+            const { count: menuItemsCount, error: menuItemsError } = await supabase
+                .from('menu_items')
+                .select('*', { count: 'exact', head: true });
+            
+            if (!shopsError) {
+                document.getElementById('total-shops').textContent = shopsCount || 0;
+            }
+            
+            if (!customersError) {
+                document.getElementById('total-customers').textContent = customersCount || 0;
+            }
+            
+            if (!menuItemsError) {
+                document.getElementById('total-menu-items').textContent = menuItemsCount || 0;
+            }
+        }
+
+        async function loadAllShops() {
+    const { data: shops, error } = await supabase
+        .from('shops')
+        .select('*')
+        .order('name');
+    
+    if (error) {
+        console.error("Error loading shops:", error);
+        return;
+    }
+    
+    allShops = shops;
+    
+    const shopsList = document.getElementById('shops-list');
+    shopsList.innerHTML = shops.map(shop => `
+        <div class="shop-item-admin">
+            <div style="flex: 1;">
+                <strong>${shop.name}</strong>
+                ${shop.suspended ? '<span style="color: red; margin-left: 10px;">[SUSPENDED]</span>' : ''}<br>
+                <small>${shop.address}</small><br>
+                <small>${shop.phone_number} • ${shop.email}</small>
+                <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                    <div style="display: flex; align-items: center; gap: 5px;">
+                        <div style="width: 15px; height: 15px; border-radius: 3px; background: ${shop.primary_color || '#FF7B31'};"></div>
+                        <small>Primary</small>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 5px;">
+                        <div style="width: 15px; height: 15px; border-radius: 3px; background: ${shop.secondary_color || '#FFAA53'};"></div>
+                        <small>Secondary</small>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 5px;">
+                        <div style="width: 15px; height: 15px; border-radius: 3px; background: ${shop.accent_color || '#4CAF50'};"></div>
+                        <small>Accent</small>
+                    </div>
+                </div>
+            </div>
+            <div style="display: flex; gap: 10px;">
+                <button class="btn-secondary" onclick="editShopColors(${shop.id})">
+                    <i class="fas fa-palette"></i> Edit Colors
+                </button>
+                <button class="btn-secondary" onclick="toggleShopSuspension(${shop.id}, ${!shop.suspended})">
+                    ${shop.suspended ? 'Unsuspend' : 'Suspend'}
+                </button>
+                <button class="btn-danger" onclick="deleteShop(${shop.id})">Delete</button>
+            </div>
+        </div>
+    `).join('');
+    
+    const shopSelect = document.getElementById('shop-select-menu');
+    shopSelect.innerHTML = '<option value="">Select a shop</option>' + 
+        shops.map(shop => `<option value="${shop.id}">${shop.name}</option>`).join('');
+
+    populateReminderShopSelect();
+}
+
+window.editShopColors = async function(shopId) {
+    try {
+        const { data: shop, error } = await supabase
+            .from('shops')
+            .select('*')
+            .eq('id', shopId)
+            .single();
+        
+        if (error) throw error;
+        
+        const modal = document.createElement('div');
+        modal.className = 'modal-overlay active';
+        modal.innerHTML = `
+            <div class="page-modal" style="max-width: 500px;">
+                <div class="page-header">
+                    <h2>Edit Colors for ${shop.name}</h2>
+                    <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="page-content">
+                    <div class="form-group">
+                        <label class="form-label">Primary Color</label>
+                        <div style="display: flex; gap: 10px; align-items: center;">
+                            <input type="color" id="edit-primary-color" value="${shop.primary_color || '#FF7B31'}" 
+                                   style="width: 40px; height: 40px; border: none; border-radius: 5px; cursor: pointer;">
+                            <input type="text" class="form-input" id="edit-primary-color-hex" 
+                                   value="${shop.primary_color || '#FF7B31'}" style="flex: 1;">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Secondary Color</label>
+                        <div style="display: flex; gap: 10px; align-items: center;">
+                            <input type="color" id="edit-secondary-color" value="${shop.secondary_color || '#FFAA53'}" 
+                                   style="width: 40px; height: 40px; border: none; border-radius: 5px; cursor: pointer;">
+                            <input type="text" class="form-input" id="edit-secondary-color-hex" 
+                                   value="${shop.secondary_color || '#FFAA53'}" style="flex: 1;">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Accent Color</label>
+                        <div style="display: flex; gap: 10px; align-items: center;">
+                            <input type="color" id="edit-accent-color" value="${shop.accent_color || '#4CAF50'}" 
+                                   style="width: 40px; height: 40px; border: none; border-radius: 5px; cursor: pointer;">
+                            <input type="text" class="form-input" id="edit-accent-color-hex" 
+                                   value="${shop.accent_color || '#4CAF50'}" style="flex: 1;">
+                        </div>
+                    </div>
+                    
+                    <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 20px 0;">
+                        <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 10px;">
+                            <div style="width: 40px; height: 40px; border-radius: 8px; background: ${shop.primary_color || '#FF7B31'};" id="edit-color-preview-primary"></div>
+                            <div style="width: 40px; height: 40px; border-radius: 8px; background: ${shop.secondary_color || '#FFAA53'};" id="edit-color-preview-secondary"></div>
+                            <div style="width: 40px; height: 40px; border-radius: 8px; background: ${shop.accent_color || '#4CAF50'};" id="edit-color-preview-accent"></div>
+                        </div>
+                        <div style="padding: 10px 15px; background: linear-gradient(135deg, ${shop.primary_color || '#FF7B31'}, ${shop.secondary_color || '#FFAA53'}); color: white; border-radius: 8px; font-weight: bold; text-align: center;" id="edit-gradient-preview">
+                            Header Preview
+                        </div>
+                    </div>
+                    
+                    <div style="display: flex; gap: 10px;">
+                        <button class="btn-primary" id="save-colors-btn" style="flex: 1;">
+                            Save Colors
+                        </button>
+                        <button class="btn-secondary" onclick="this.closest('.modal-overlay').remove()" style="flex: 1;">
+                            Cancel
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        
+        setupEditColorPicker(shopId);
+        
+        modal.addEventListener('click', function(e) {
+            if (e.target === this) {
+                this.remove();
+            }
+        });
+        
+    } catch (error) {
+        console.error("Error loading shop colors:", error);
+        alert('Error loading shop colors: ' + error.message);
+    }
+};
+
+function setupEditColorPicker(shopId) {
+    const colorInputs = ['primary', 'secondary', 'accent'];
+    
+    colorInputs.forEach(color => {
+        document.getElementById(`edit-${color}-color`).addEventListener('input', function() {
+            const hexValue = this.value;
+            document.getElementById(`edit-${color}-color-hex`).value = hexValue;
+            updateEditColorPreview();
+        });
+        
+        document.getElementById(`edit-${color}-color-hex`).addEventListener('input', function() {
+            let hexValue = this.value;
+            if (!hexValue.startsWith('#')) {
+                hexValue = '#' + hexValue;
+                this.value = hexValue;
+            }
+            if (/^#[0-9A-F]{6}$/i.test(hexValue)) {
+                document.getElementById(`edit-${color}-color`).value = hexValue;
+                updateEditColorPreview();
+            }
+        });
+    });
+    
+    updateEditColorPreview();
+    
+    document.getElementById('save-colors-btn').addEventListener('click', async function() {
+        await saveShopColors(shopId);
+    });
+}
+
+function updateEditColorPreview() {
+    const primaryColor = document.getElementById('edit-primary-color').value;
+    const secondaryColor = document.getElementById('edit-secondary-color').value;
+    const accentColor = document.getElementById('edit-accent-color').value;
+    
+    document.getElementById('edit-color-preview-primary').style.background = primaryColor;
+    document.getElementById('edit-color-preview-secondary').style.background = secondaryColor;
+    document.getElementById('edit-color-preview-accent').style.background = accentColor;
+    
+    const gradientPreview = document.getElementById('edit-gradient-preview');
+    gradientPreview.style.background = `linear-gradient(135deg, ${primaryColor}, ${secondaryColor})`;
+}
+
+async function saveShopColors(shopId) {
+    const primaryColor = document.getElementById('edit-primary-color-hex').value;
+    const secondaryColor = document.getElementById('edit-secondary-color-hex').value;
+    const accentColor = document.getElementById('edit-accent-color-hex').value;
+    
+    if (!isValidHexColor(primaryColor) || !isValidHexColor(secondaryColor) || !isValidHexColor(accentColor)) {
+        alert('Please enter valid hex color codes (e.g., #FF7B31)');
+        return;
+    }
+    
+    try {
+        const { error } = await supabase
+            .from('shops')
+            .update({
+                primary_color: primaryColor,
+                secondary_color: secondaryColor,
+                accent_color: accentColor
+            })
+            .eq('id', shopId);
+        
+        if (error) throw error;
+        
+        showToast('Shop colors updated successfully!');
+        
+        document.querySelector('.modal-overlay.active').remove();
+        
+        await loadAllShops();
+        
+    } catch (error) {
+        console.error("Error saving shop colors:", error);
+        alert('Error saving shop colors: ' + error.message);
+    }
+}
+
+window.toggleShopSuspension = async function(shopId, suspend) {
+    const action = suspend ? 'suspend' : 'unsuspend';
+    
+    if (!confirm(`Are you sure you want to ${action} this shop?`)) {
+        return;
+    }
+    
+    try {
+        const { error } = await supabase
+            .from('shops')
+            .update({ suspended: suspend })
+            .eq('id', shopId);
+        
+        if (error) throw error;
+        
+        alert(`Shop ${action}ed successfully!`);
+        await loadAllShops();
+        
+    } catch (error) {
+        console.error(`Error ${action}ing shop:`, error);
+        alert(`Error ${action}ing shop: ` + error.message);
+    }
+};
+
+        async function loadAllCustomers() {
+            const { data: registrations, error } = await supabase
+                .from('customer_registrations')
+                .select('*, shops(name)')
+                .order('registered_at', { ascending: false });
+            
+            if (error) {
+                console.error("Error loading customers:", error);
+                return;
+            }
+            
+            const customersList = document.getElementById('all-customers-list');
+            customersList.innerHTML = registrations.map(reg => `
+                <div class="customer-item">
+                    <div>
+                        <strong>${reg.customer_email}</strong><br>
+                        <small>Registered at: ${reg.shops.name}</small><br>
+                        <small>Date: ${new Date(reg.registered_at).toLocaleDateString()}</small>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function loadShopMenuForDev(shopId) {
+            const { data: menuItems, error } = await supabase
+                .from('menu_items')
+                .select('*, menu_item_addons(*)')
+                .eq('shop_id', shopId)
+                .order('category')
+                .order('name');
+            
+            if (error) {
+                console.error("Error loading shop menu:", error);
+                return;
+            }
+            
+            const menuList = document.getElementById('dev-menu-items-list');
+            menuList.innerHTML = menuItems.map(item => `
+                <div class="menu-item-card">
+                    <div class="menu-item-header">
+                        <div class="menu-item-name">${item.name}</div>
+                        <div class="menu-item-price">R${parseFloat(item.price).toFixed(2)}</div>
+                    </div>
+                    <div class="menu-item-category">${item.category}</div>
+                    <div class="menu-item-description"> ${item.description || 'No description'} | ⏱️ ${item.preparation_time || '15-30'} min</div>
+                    ${item.menu_item_addons.length > 0 ? `
+                        <div class="menu-item-addons">
+                            <strong>Add-ons:</strong> ${item.menu_item_addons.map(addon => addon.name).join(', ')}
+                        </div>
+                    ` : ''}
+                    ${item.badge ? `<span class="food-badge" style="position: static; display: inline-block; margin-right: 10px;">${item.badge}</span>` : ''}
+                    ${item.rating ? `<span>⭐ ${item.rating}</span>` : ''}
+                    <div class="menu-item-actions" style="margin-top: 10px;">
+                        <button class="btn-secondary" onclick="editDevMenuItem(${item.id})">Edit</button>
+                        <button class="btn-danger" onclick="deleteDevMenuItem(${item.id})">Delete</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function addNewMenuItem() {
+            const shopId = document.getElementById('shop-select-menu').value;
+            const name = document.getElementById('new-item-name').value;
+            const description = document.getElementById('new-item-desc').value;
+            const price = parseFloat(document.getElementById('new-item-price').value);
+            const category = document.getElementById('new-item-category').value;
+            const imageUrl = document.getElementById('new-item-image').value;
+            const badge = document.getElementById('new-item-badge').value;
+            const rating = document.getElementById('new-item-rating').value ? parseFloat(document.getElementById('new-item-rating').value) : null;
+            const preparationTime = document.getElementById('new-item-prep-time').value;
+            
+            if (!shopId || !name || !price || !category) {
+                alert('Shop, name, price, and category are required');
+                return;
+            }
+            
+            const addons = [];
+            const addonNames = document.querySelectorAll('.new-addon-name');
+            
+            for (let i = 0; i < addonNames.length; i++) {
+                if (addonNames[i].value.trim()) {
+                    addons.push({
+                        name: addonNames[i].value.trim(),
+                        price: 0 
+                    });
+                }
+            }
+            
+            try {
+                const { data: menuItem, error } = await supabase
+                    .from('menu_items')
+                    .insert([
+                        {
+                            shop_id: shopId,
+                            name: name,
+                            description: description,
+                            price: price,
+                            category: category,
+                            image_url: imageUrl || null,
+                            badge: badge || null,
+                            rating: rating,
+                            preparation_time: preparationTime || '15-30'
+                        }
+                    ])
+                    .select()
+                    .single();
+                
+                if (error) throw error;
+                
+                if (addons.length > 0) {
+                    const addonsToInsert = addons.map(addon => ({
+                        menu_item_id: menuItem.id,
+                        name: addon.name,
+                        price: addon.price
+                    }));
+                    
+                    const { error: addonError } = await supabase
+                        .from('menu_item_addons')
+                        .insert(addonsToInsert);
+                    
+                    if (addonError) throw addonError;
+                }
+                
+                alert('Menu item added successfully!');
+                
+                document.getElementById('new-item-name').value = '';
+                document.getElementById('new-item-desc').value = '';
+                document.getElementById('new-item-price').value = '';
+                document.getElementById('new-item-category').value = '';
+                document.getElementById('new-item-image').value = '';
+                document.getElementById('new-item-badge').value = '';
+                document.getElementById('new-item-rating').value = '';
+                
+                const addonsContainer = document.getElementById('new-addons-container');
+                addonsContainer.innerHTML = `
+                    <div class="addon-item">
+                        <input type="text" class="addon-input new-addon-name" placeholder="Add-on name">
+                        <button type="button" class="btn-secondary btn-small remove-addon">Remove</button>
+                    </div>
+                `;
+                
+                await loadShopMenuForDev(shopId);
+                await loadDevStats();
+                
+            } catch (error) {
+                console.error("Error adding menu item:", error);
+                alert('Error adding menu item: ' + error.message);
+            }
+        }
+
+window.editDevMenuItem = async function(itemId) {
+    try {
+        const { data: menuItem, error } = await supabase
+            .from('menu_items')
+            .select('*, menu_item_addons(*)')
+            .eq('id', itemId)
+            .single();
+        
+        if (error) throw error;
+        
+        const modal = document.createElement('div');
+        modal.className = 'modal-overlay active';
+        modal.innerHTML = `
+            <div class="page-modal" style="max-width: 600px;">
+                <div class="page-header">
+                    <h2>Edit Menu Item</h2>
+                    <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="page-content">
+                    <div class="form-group">
+                        <label class="form-label">Item Name *</label>
+                        <input type="text" class="form-input" id="edit-item-name" value="${menuItem.name}">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Description</label>
+                        <textarea class="form-textarea" id="edit-item-desc">${menuItem.description || ''}</textarea>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Price (Rands) *</label>
+                        <input type="number" step="0.01" class="form-input" id="edit-item-price" value="${menuItem.price}">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Category *</label>
+                        <input type="text" class="form-input" id="edit-item-category" value="${menuItem.category}">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Image URL</label>
+                        <input type="text" class="form-input" id="edit-item-image" value="${menuItem.image_url || ''}">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Badge (Optional)</label>
+                        <input type="text" class="form-input" id="edit-item-badge" value="${menuItem.badge || ''}" placeholder="e.g., Popular, New, etc.">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Rating (Optional)</label>
+                        <input type="number" step="0.1" min="0" max="5" class="form-input" id="edit-item-rating" value="${menuItem.rating || ''}" placeholder="0-5">
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Preparation Time *</label>
+                        <input type="text" class="form-input" id="edit-item-prep-time" value="${menuItem.preparation_time || '15-30'}" placeholder="e.g., 15-20 min">
+                    </div>
+                    
+                    <div class="addon-management">
+                        <h5>Add-ons (Optional) - No additional cost</h5>
+                        <div class="addons-container" id="edit-addons-container">
+                            ${menuItem.menu_item_addons.map(addon => `
+                                <div class="addon-item">
+                                    <input type="text" class="addon-input edit-addon-name" value="${addon.name}" placeholder="Add-on name">
+                                    <button type="button" class="btn-secondary btn-small remove-addon">Remove</button>
+                                </div>
+                            `).join('')}
+                            ${menuItem.menu_item_addons.length === 0 ? `
+                                <div class="addon-item">
+                                    <input type="text" class="addon-input edit-addon-name" placeholder="Add-on name">
+                                    <button type="button" class="btn-secondary btn-small remove-addon">Remove</button>
+                                </div>
+                            ` : ''}
+                        </div>
+                        <button type="button" class="btn-secondary btn-small" onclick="addEditAddonField()">Add Add-on</button>
+                    </div>
+                    
+                    <div style="display: flex; gap: 10px; margin-top: 20px;">
+                        <button class="btn-primary" id="save-edit-btn" style="flex: 1;">Save Changes</button>
+                        <button class="btn-secondary" onclick="this.closest('.modal-overlay').remove()" style="flex: 1;">Cancel</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        
+        document.getElementById('save-edit-btn').addEventListener('click', async () => {
+            await saveMenuItemEdit(itemId, modal);
+        });
+        
+        modal.addEventListener('click', function(e) {
+            if (e.target === this) {
+                this.remove();
+            }
+        });
+        
+    } catch (error) {
+        console.error("Error loading menu item for editing:", error);
+        alert('Error loading menu item: ' + error.message);
+    }
+};
+
+window.addEditAddonField = function() {
+    const container = document.getElementById('edit-addons-container');
+    const newAddon = document.createElement('div');
+    newAddon.className = 'addon-item';
+    newAddon.innerHTML = `
+        <input type="text" class="addon-input edit-addon-name" placeholder="Add-on name">
+        <button type="button" class="btn-secondary btn-small remove-addon">Remove</button>
+    `;
+    container.appendChild(newAddon);
+};
+
+async function saveMenuItemEdit(itemId, modal) {
+    const name = document.getElementById('edit-item-name').value;
+    const description = document.getElementById('edit-item-desc').value;
+    const price = parseFloat(document.getElementById('edit-item-price').value);
+    const category = document.getElementById('edit-item-category').value;
+    const imageUrl = document.getElementById('edit-item-image').value;
+    const badge = document.getElementById('edit-item-badge').value;
+    const rating = document.getElementById('edit-item-rating').value ? parseFloat(document.getElementById('edit-item-rating').value) : null;
+    const preparationTime = document.getElementById('edit-item-prep-time').value;
+
+    if (!name || !price || !category) {
+        alert('Name, price, and category are required');
+        return;
+    }
+    
+    const addons = [];
+    const addonNames = document.querySelectorAll('#edit-addons-container .edit-addon-name');
+    
+    for (let i = 0; i < addonNames.length; i++) {
+        if (addonNames[i].value.trim()) {
+            addons.push({
+                name: addonNames[i].value.trim(),
+                price: 0
+            });
+        }
+    }
+    
+    try {
+        const { error } = await supabase
+            .from('menu_items')
+            .update({
+                name: name,
+                description: description,
+                price: price,
+                category: category,
+                image_url: imageUrl || null,
+                badge: badge || null,
+                rating: rating,
+                preparation_time: preparationTime || '15-30'
+            })
+            .eq('id', itemId);
+        
+        if (error) throw error;
+        
+        const { error: deleteError } = await supabase
+            .from('menu_item_addons')
+            .delete()
+            .eq('menu_item_id', itemId);
+        
+        if (deleteError) throw deleteError;
+        
+        if (addons.length > 0) {
+            const addonsToInsert = addons.map(addon => ({
+                menu_item_id: itemId,
+                name: addon.name,
+                price: addon.price
+            }));
+            
+            const { error: addonError } = await supabase
+                .from('menu_item_addons')
+                .insert(addonsToInsert);
+            
+            if (addonError) throw addonError;
+        }
+        
+        alert('Menu item updated successfully!');
+        modal.remove();
+        
+        const shopId = document.getElementById('shop-select-menu').value;
+        await loadShopMenuForDev(shopId);
+        
+    } catch (error) {
+        console.error("Error updating menu item:", error);
+        alert('Error updating menu item: ' + error.message);
+    }
+}
+
+        window.deleteDevMenuItem = async function(itemId) {
+            if (!confirm('Are you sure you want to delete this menu item?')) {
+                return;
+            }
+            
+            try {
+                const { error: addonError } = await supabase
+                    .from('menu_item_addons')
+                    .delete()
+                    .eq('menu_item_id', itemId);
+                
+                if (addonError) throw addonError;
+                
+                const { error } = await supabase
+                    .from('menu_items')
+                    .delete()
+                    .eq('id', itemId);
+                
+                if (error) throw error;
+                
+                alert('Menu item deleted successfully!');
+                const shopId = document.getElementById('shop-select-menu').value;
+                await loadShopMenuForDev(shopId);
+                await loadDevStats();
+                
+            } catch (error) {
+                console.error("Error deleting menu item:", error);
+                alert('Error deleting menu item: ' + error.message);
+            }
+        };
+
+        async function createShopWithMenu() {
+    const shopName = document.getElementById('shop-name').value;
+    const shopPhone = document.getElementById('shop-phone').value;
+    const shopEmail = document.getElementById('shop-email').value;
+    const shopAddress = document.getElementById('shop-address').value;
+    const adminEmail = document.getElementById('admin-email').value;
+    
+    const primaryColor = document.getElementById('shop-primary-color-hex').value;
+    const secondaryColor = document.getElementById('shop-secondary-color-hex').value;
+    const accentColor = document.getElementById('shop-accent-color-hex').value;
+    
+    if (!shopName || !adminEmail) {
+        alert('Shop name and admin email are required');
+        return;
+    }
+    
+    if (!isValidHexColor(primaryColor) || !isValidHexColor(secondaryColor) || !isValidHexColor(accentColor)) {
+        alert('Please enter valid hex color codes (e.g., #FF7B31)');
+        return;
+    }
+    
+    const menuItems = [];
+    const menuForms = document.querySelectorAll('.menu-item-form');
+    
+    for (const form of menuForms) {
+        const name = form.querySelector('.menu-item-name').value;
+        const price = form.querySelector('.menu-item-price').value;
+        const category = form.querySelector('.menu-item-category').value;
+        
+        if (name && price && category) {
+            const menuItem = {
+                name: name,
+                description: form.querySelector('.menu-item-desc').value,
+                price: parseFloat(price),
+                category: category,
+                image_url: form.querySelector('.menu-item-image').value || null,
+                badge: form.querySelector('.menu-item-badge').value || null,
+                rating: form.querySelector('.menu-item-rating').value ? parseFloat(form.querySelector('.menu-item-rating').value) : null,
+                addons: []
+            };
+            
+            const addonInputs = form.querySelectorAll('.addon-input');
+            addonInputs.forEach(input => {
+                if (input.value.trim()) {
+                    menuItem.addons.push({
+                        name: input.value.trim(),
+                        price: 0
+                    });
+                }
+            });
+            
+            menuItems.push(menuItem);
+        }
+    }
+    
+    if (menuItems.length === 0) {
+        alert('Please add at least one valid menu item');
+        return;
+    }
+    
+    try {
+        const { data: shop, error: shopError } = await supabase
+            .from('shops')
+            .insert([
+                {
+                    name: shopName,
+                    phone_number: shopPhone,
+                    email: shopEmail,
+                    address: shopAddress,
+                    created_by: currentUser.email,
+                    primary_color: primaryColor,
+                    secondary_color: secondaryColor,
+                    accent_color: accentColor
+                }
+            ])
+            .select()
+            .single();
+        
+        if (shopError) throw shopError;
+        
+        const { error: adminError } = await supabase
+            .from('shop_admins')
+            .insert([
+                {
+                    shop_id: shop.id,
+                    admin_email: adminEmail
+                }
+            ]);
+        
+        if (adminError) throw adminError;
+        
+        for (const menuItem of menuItems) {
+            const { data: createdItem, error: itemError } = await supabase
+                .from('menu_items')
+                .insert([
+                    {
+                        shop_id: shop.id,
+                        name: menuItem.name,
+                        description: menuItem.description,
+                        price: menuItem.price,
+                        category: menuItem.category,
+                        image_url: menuItem.image_url,
+                        badge: menuItem.badge,
+                        rating: menuItem.rating
+                    }
+                ])
+                .select()
+                .single();
+            
+            if (itemError) throw itemError;
+            
+            if (menuItem.addons.length > 0) {
+                const addonsToInsert = menuItem.addons.map(addon => ({
+                    menu_item_id: createdItem.id,
+                    name: addon.name,
+                    price: addon.price
+                }));
+                
+                const { error: addonError } = await supabase
+                    .from('menu_item_addons')
+                    .insert(addonsToInsert);
+                
+                if (addonError) throw addonError;
+            }
+        }
+        
+        alert('Shop created successfully with custom colors!');
+        
+        document.getElementById('shop-name').value = '';
+        document.getElementById('shop-phone').value = '';
+        document.getElementById('shop-email').value = '';
+        document.getElementById('shop-address').value = '';
+        document.getElementById('admin-email').value = '';
+        
+        document.getElementById('shop-primary-color').value = '#FF7B31';
+        document.getElementById('shop-primary-color-hex').value = '#FF7B31';
+        document.getElementById('shop-secondary-color').value = '#FFAA53';
+        document.getElementById('shop-secondary-color-hex').value = '#FFAA53';
+        document.getElementById('shop-accent-color').value = '#4CAF50';
+        document.getElementById('shop-accent-color-hex').value = '#4CAF50';
+        
+        updateColorPreview();
+        
+        const menuContainer = document.getElementById('menu-items-container');
+        menuContainer.innerHTML = menuContainer.querySelector('.menu-item-form').outerHTML;
+        
+        await loadAllShops();
+        await loadDevStats();
+        
+    } catch (error) {
+        console.error("Error creating shop:", error);
+        alert('Error creating shop: ' + error.message);
+    }
+    }
+
+    function isValidHexColor(color) {
+        return /^#[0-9A-F]{6}$/i.test(color);
+    }
+
+    function setHeaderVisibility(visible) {
+        const appHeader = document.querySelector('.app-header');
+        if (appHeader) {
+            if (!visible) {
+                appHeader.classList.add('hidden');
+            } else {
+                appHeader.classList.remove('hidden');
+            }
+        }
+    }
+
+        function showSuspendedShopMessage() {
+    setHeaderVisibility(false);
+    
+    const mainContent = document.getElementById('main-content');
+    mainContent.innerHTML = `
+        <style>
+            .suspended-admin-container {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                min-height: 100vh;
+                padding: 20px;
+                background: #f8fafc;
+            }
+            
+            .suspended-admin-card {
+                background: white;
+                border-radius: 32px;
+                padding: 48px 32px;
+                max-width: 450px;
+                width: 100%;
+                text-align: center;
+                box-shadow: 0 20px 40px rgba(0, 0, 0, 0.08);
+                animation: fadeInAdmin 0.5s ease;
+            }
+            
+            @keyframes fadeInAdmin {
+                from { opacity: 0; transform: scale(0.95); }
+                to { opacity: 1; transform: scale(1); }
+            }
+            
+            .suspended-admin-icon {
+                width: 100px;
+                height: 100px;
+                background: linear-gradient(135deg, #fee2e2, #ffebee);
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                margin: 0 auto 24px;
+            }
+            
+            .suspended-admin-icon i {
+                font-size: 48px;
+                color: #dc2626;
+            }
+            
+            .suspended-admin-card h2 {
+                font-size: 28px;
+                font-weight: 800;
+                margin: 0 0 16px;
+                color: #dc2626;
+            }
+            
+            .suspended-admin-card p {
+                color: #475569;
+                font-size: 15px;
+                line-height: 1.5;
+                margin: 0 0 24px;
+            }
+            
+            .admin-contact-card {
+                background: #f8fafc;
+                border-radius: 24px;
+                padding: 24px;
+                margin: 24px 0;
+                text-align: left;
+            }
+            
+            .admin-contact-card h4 {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                margin: 0 0 20px;
+                font-size: 16px;
+                font-weight: 700;
+                color: #1e293b;
+            }
+            
+            .admin-contact-card h4 i {
+                color: var(--primary);
+            }
+            
+            .admin-contact-item {
+                display: flex;
+                align-items: center;
+                gap: 14px;
+                margin-bottom: 16px;
+            }
+            
+            .admin-contact-item:last-child {
+                margin-bottom: 0;
+            }
+            
+            .admin-contact-item i {
+                width: 40px;
+                height: 40px;
+                background: white;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                color: var(--primary);
+                font-size: 16px;
+            }
+            
+            .admin-contact-item div {
+                flex: 1;
+            }
+            
+            .admin-contact-label {
+                font-size: 11px;
+                color: #94a3b8;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+                margin-bottom: 2px;
+            }
+            
+            .admin-contact-value {
+                font-size: 16px;
+                font-weight: 600;
+                color: #1e293b;
+            }
+            
+            .response-badge {
+                display: inline-flex;
+                align-items: center;
+                gap: 8px;
+                background: #f1f5f9;
+                padding: 8px 20px;
+                border-radius: 40px;
+                font-size: 13px;
+                color: #475569;
+                margin-top: 8px;
+            }
+        </style>
+        
+        <div class="suspended-admin-container">
+            <div class="suspended-admin-card">
+                <div class="suspended-admin-icon">
+                    <i class="fas fa-ban"></i>
+                </div>
+                
+                <h2>Shop Suspended</h2>
+                <p>Your shop has been suspended. Please contact the developer team to resolve this issue.</p>
+                
+                <div class="admin-contact-card">
+                    <h4>
+                        <i class="fas fa-headset"></i>
+                        Developer Contact
+                    </h4>
+                    
+                    <div class="admin-contact-item">
+                        <i class="fas fa-phone-alt"></i>
+                        <div>
+                            <div class="admin-contact-label">Phone</div>
+                            <div class="admin-contact-value">+27 81 792 5033</div>
+                        </div>
+                    </div>
+                    
+                    <div class="admin-contact-item">
+                        <i class="fas fa-envelope"></i>
+                        <div>
+                            <div class="admin-contact-label">Email</div>
+                            <div class="admin-contact-value">support@96studios.co.za</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="response-badge">
+                    <i class="fas fa-clock"></i>
+                    <span>Response time: 2-4 hours</span>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.getElementById('bottom-nav').style.display = 'none';
+    document.getElementById('dev-admin-dashboard').classList.remove('active');
+    document.getElementById('shop-admin-dashboard').classList.remove('active');
+}
+
+        async function loadShopAdminDashboard(adminData) {
+            setHeaderVisibility(false); 
+            if (adminData.shops.suspended) {
+                showSuspendedShopMessage();
+                return;
+            }
+            
+            currentShop = adminData.shops;
+            const dashboard = document.getElementById('shop-admin-dashboard');
+            dashboard.classList.add('active');
+
+    applyShopColors(currentShop);
+
+    updateHeaderText(currentShop);
+            
+            document.getElementById('shop-admin-title').textContent = currentShop.name + ' Admin';
+
+            const paymentsNav = document.getElementById('shop-payments-nav');
+
+            if (paymentsNav) {
+                paymentsNav.style.display =
+                    currentShop.plan === 'paid'
+                        ? 'flex'
+                        : 'none';
+            }
+            
+            await loadShopAdminContent();
+            
+            document.querySelectorAll('#shop-admin-dashboard .sidebar-item').forEach(item => {
+                item.addEventListener('click', async function() {
+                    document.querySelectorAll('#shop-admin-dashboard .sidebar-item').forEach(i => i.classList.remove('active'));
+                    this.classList.add('active');
+                    
+                    const section = this.getAttribute('data-section');
+                    await loadShopAdminSection(section);
+                });
+            });
+        }
+
+        async function loadShopAdminContent() {
+    const content = document.getElementById('shop-admin-content');
+    
+    const shopStatus = getShopStatus(currentShop.working_hours, currentShop.temporary_closed);
+    
+    content.innerHTML = `
+    <div class="admin-section active" id="shop-dashboard">
+    <h2>${currentShop.name} Dashboard</h2>
+    <p style="margin-bottom: 20px;" >Welcome to your shop admin panel. 
+        <span class="shop-status ${shopStatus.status}">${shopStatus.message}</span>
+    </p>
+    
+    <div style="display: flex; gap: 15px; margin-bottom: 20px; align-items: center;">
+        <div class="form-group" style="margin: 0; flex: 1;">
+            <label class="form-label">Date Range</label>
+            <select class="form-input" id="dashboard-period">
+                <option value="today">Today</option>
+                <option value="yesterday">Yesterday</option>
+                <option value="week">This Week</option>
+                <option value="month">This Month</option>
+                <option value="last_month">Last Month</option>
+                <option value="all">All Time</option>
+                <option value="custom">Custom Range</option>
+            </select>
+        </div>
+        <div id="custom-date-range" style="display: none; flex: 2; gap: 10px; align-items: center;">
+            <input type="date" id="custom-start-date" class="form-input" style="flex: 1;">
+            <span>to</span>
+            <input type="date" id="custom-end-date" class="form-input" style="flex: 1;">
+        </div>
+        <button class="btn-secondary" id="refresh-dashboard-btn">
+            <i class="fas fa-sync-alt"></i> Refresh
+        </button>
+    </div>
+    
+    <div class="stats-container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 15px; margin-top: 20px;">
+        <div style="background: white; padding: 25px; border-radius: 10px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.05); border-left: 4px solid var(--primary);">
+            <h3 id="shop-customers-count" style="font-size: 2rem; margin: 0; color: var(--primary);">0</h3>
+            <p style="margin: 10px 0 0 0; color: #666;">Registered Customers</p>
+        </div>
+        
+        <div style="background: white; padding: 25px; border-radius: 10px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.05); border-left: 4px solid var(--accent);">
+            <h3 id="pending-orders-count" style="font-size: 2rem; margin: 0; color: var(--accent);">0</h3>
+            <p style="margin: 10px 0 0 0; color: #666;">Active Orders</p>
+        </div>
+        
+        <div style="background: white; padding: 25px; border-radius: 10px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.05); border-left: 4px solid #17a2b8;">
+            <h3 id="total-orders-count" style="font-size: 2rem; margin: 0; color: #17a2b8;">0</h3>
+            <p style="margin: 10px 0 0 0; color: #666;">Total Orders</p>
+        </div>
+        
+        <div style="background: white; padding: 25px; border-radius: 10px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.05); border-left: 4px solid #28a745;">
+            <h3 id="total-revenue" style="font-size: 2rem; margin: 0; color: #28a745;">R0.00</h3>
+            <p style="margin: 10px 0 0 0; color: #666;">Total Revenue</p>
+            <small style="color: #888; font-size: 0.8rem;">(Excluding cancelled)</small>
+        </div>
+    </div>
+    
+    <div class="stats-container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-top: 15px;">
+        <div style="background: white; padding: 20px; border-radius: 10px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
+            <h3 id="completed-orders-count" style="font-size: 1.5rem; margin: 0; color: #28a745;">0</h3>
+            <p style="margin: 10px 0 0 0; color: #666; font-size: 0.9rem;">Completed Orders</p>
+        </div>
+        
+        <div style="background: white; padding: 20px; border-radius: 10px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
+            <h3 id="cancelled-orders-count" style="font-size: 1.5rem; margin: 0; color: #dc3545;">0</h3>
+            <p style="margin: 10px 0 0 0; color: #666; font-size: 0.9rem;">Cancelled Orders</p>
+        </div>
+        
+        <div style="background: white; padding: 20px; border-radius: 10px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
+            <h3 id="average-order-value" style="font-size: 1.5rem; margin: 0; color: #ffc107;">R0.00</h3>
+            <p style="margin: 10px 0 0 0; color: #666; font-size: 0.9rem;">Average Order Value</p>
+        </div>
+        
+        <div style="background: white; padding: 20px; border-radius: 10px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
+            <h3 id="top-selling-item" style="font-size: 1.5rem; margin: 0; color: var(--secondary);">-</h3>
+            <p style="margin: 10px 0 0 0; color: #666; font-size: 0.9rem;">Top Selling Item</p>
+        </div>
+    </div>
+    
+    <div style="background: white; padding: 25px; border-radius: 10px; margin-top: 25px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h3 style="margin: 0;">Recent Orders</h3>
+            <a href="#" onclick="loadShopAdminSection('shop-orders'); return false;" style="color: var(--primary); text-decoration: none;">
+                View All Orders <i class="fas fa-arrow-right"></i>
+            </a>
+        </div>
+        
+        <div id="recent-orders-list">
+            <div class="empty-state" style="padding: 20px;">
+                <i class="fas fa-shopping-cart"></i>
+                <p>Loading recent orders...</p>
+            </div>
+        </div>
+    </div>
+</div>
+        
+        <div class="admin-section" id="shop-orders">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h2 style="margin: 0;">Order Management</h2>
+                <button class="btn-secondary" id="toggle-offline-order-btn">
+                    <i class="fas fa-cash-register"></i> Add Walk-in Order
+                </button>
+            </div>
+            
+            <div class="form-section" id="offline-order-form" style="background: #f8f9fa; padding: 0; border-radius: 10px; margin-bottom: 25px; display: none; overflow: hidden;">
+                <div style="padding: 20px; border-bottom: 1px solid #dee2e6;">
+                    <h4 style="margin: 0; display: flex; align-items: center; gap: 10px;">
+                        <i class="fas fa-cash-register"></i> Add Walk-in Order
+                    </h4>
+                </div>
+                
+                <div style="padding: 20px;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                        <div class="form-group">
+                            <label class="form-label">Customer Name *</label>
+                            <input type="text" class="form-input" id="offline-customer-name" placeholder="Customer name" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Select Menu Item *</label>
+                            <select class="form-input" id="menu-item-select">
+                                <option value="">Select from menu</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">Order Items *</label>
+                        <div id="offline-order-items">
+                            <div class="offline-order-item" style="display: grid; grid-template-columns: 2fr 1fr auto; gap: 10px; margin-bottom: 10px; align-items: center;">
+                                <select class="form-input offline-item-select" required>
+                                    <option value="">Select item</option>
+                                </select>
+                                <input type="number" class="form-input offline-item-quantity" placeholder="Qty" value="1" min="1" required>
+                                <button type="button" class="btn-danger remove-offline-item" style="padding: 8px 12px;">×</button>
+                            </div>
+                        </div>
+                        <button type="button" class="btn-secondary" id="add-offline-item" style="margin-top: 10px;">
+                            <i class="fas fa-plus"></i> Add Another Item
+                        </button>
+                    </div>
+                    
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                        <div class="form-group">
+                            <label class="form-label">Collection Method</label>
+                            <select class="form-input" id="offline-collection-method">
+                                <option value="pickup">Pickup</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Payment Method</label>
+                            <select class="form-input" id="offline-payment-method">
+                                <option value="cash">Cash</option>
+                                <option value="bank_card">Bank Card</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div style="display: flex; gap: 10px; margin-top: 20px;">
+                        <button class="btn-primary" id="create-offline-order-btn" style="flex: 1;">
+                            <i class="fas fa-save"></i> Create Order
+                        </button>
+                        <button class="btn-secondary" id="cancel-offline-order-btn" style="flex: 1;">
+                            <i class="fas fa-times"></i> Cancel
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 15px; margin-bottom: 20px; align-items: center;">
+                <div class="form-group" style="margin: 0; flex: 1;">
+                    <select class="form-input" id="orders-filter">
+                        <option value="all">All Orders</option>
+                        <option value="active">Active Orders</option>
+                        <option value="waiting">Waiting</option>
+                        <option value="preparing">Preparing</option>
+                        <option value="ready">Ready</option>
+                        <option value="completed">Completed</option>
+                        <option value="cancelled">Cancelled</option>
+                        <option value="today">Today's Orders</option>
+                        <option value="scheduled">Scheduled Orders</option>
+                    </select>
+                </div>
+                <button class="btn-secondary" id="refresh-orders-btn">
+                    <i class="fas fa-sync-alt"></i> Refresh
+                </button>
+            </div>
+            
+            <div id="shop-orders-list">
+                <div class="empty-state">
+                    <i class="fas fa-shopping-cart"></i>
+                    <p>Loading orders...</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="admin-section" id="shop-customers">
+            <h2>Customer Management</h2>
+            
+            <div style="background: #f8f9fa; padding: 20px; border-radius: 10px; margin-bottom: 25px;">
+                <h4 style="margin-bottom: 15px;">Register New Customer</h4>
+                
+                <div class="form-group">
+                    <label class="form-label">Customer Email Address *</label>
+                    <input type="email" class="form-input" id="customer-email" 
+                           placeholder="Enter customer email address" required>
+                </div>
+                
+                <button class="btn-primary" id="register-customer-btn" style="margin-top: 10px;">
+                    <i class="fas fa-user-plus"></i> Register Customer
+                </button>
+            </div>
+            
+            <h3>Registered Customers</h3>
+            <div class="customer-list" id="shop-customers-list">
+                <div class="empty-state">
+                    <i class="fas fa-users"></i>
+                    <p>Loading customers...</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="admin-section" id="working-hours">
+            <h2>Working Hours & Availability</h2>
+            ${loadWorkingHoursForm()}
+        </div>
+        
+<div class="admin-section" id="shop-settings">
+    <h2>Shop Settings</h2>
+    <div class="form-group">
+        <label class="form-label">Shop Name</label>
+        <input type="text" class="form-input" id="settings-shop-name" value="${currentShop.name}" readonly style="background: #f8f9fa; color: #666;">
+        <small style="color: #666; display: block; margin-top: 5px;">
+            Shop name cannot be changed. Contact developer for name changes.
+        </small>
+    </div>
+    <div class="form-group">
+        <label class="form-label">Phone Number</label>
+        <input type="tel" class="form-input" id="settings-shop-phone" value="${currentShop.phone_number || ''}">
+    </div>
+    <div class="form-group">
+        <label class="form-label">Email</label>
+        <input type="email" class="form-input" value="${currentShop.email || ''}" 
+               readonly style="background: #f8f9fa; color: #666;">
+        <small style="color: #666; display: block; margin-top: 5px;">
+            Shop email cannot be changed. Contact developer for email updates.
+        </small>
+    </div>
+    <div class="form-group">
+        <label class="form-label">Address</label>
+        <textarea class="form-textarea" id="settings-shop-address">${currentShop.address || ''}</textarea>
+    </div>
+    
+    <div class="form-section">
+        <h4>Delivery & Payment Settings</h4>
+        
+        <div class="form-group">
+            <label class="form-label" style="display: flex; align-items: center; gap: 10px;">
+                <input type="checkbox" id="delivery-enabled" ${currentShop.delivery_enabled !== false ? 'checked' : ''}>
+                Enable Delivery Service
+            </label>
+            <small style="color: #666; display: block; margin-top: 5px;">
+                Allow customers to choose delivery option
+            </small>
+        </div>
+        
+        <div class="form-group" id="delivery-charge-group" style="${currentShop.delivery_enabled === false ? 'display: none;' : ''}">
+            <label class="form-label">Delivery Charge (within 2km)</label>
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-weight: bold;">R</span>
+                <input type="number" class="form-input" id="delivery-charge" 
+                       value="${currentShop.delivery_charge_within_2km || 10}" 
+                       min="0" step="0.01" placeholder="10.00" style="flex: 1;">
+            </div>
+            <small style="color: #666; display: block; margin-top: 5px;">
+                Amount to charge for deliveries within 2km radius
+            </small>
+        </div>
+        
+        <div class="form-group">
+            <label class="form-label" style="display: flex; align-items: center; gap: 10px;">
+                <input type="checkbox" id="card-payment-enabled" ${currentShop.card_payment_enabled !== false ? 'checked' : ''}>
+                Enable Card Payments
+            </label>
+            <small style="color: #666; display: block; margin-top: 5px;">
+                Allow customers to pay with bank cards
+            </small>
+        </div>
+    </div>
+    
+    <button class="btn-primary" id="update-shop-btn">Update Shop Settings</button>
+</div>
+
+<div class="admin-section" id="shop-payments">
+
+    <div style="
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 15px;
+        margin-bottom: 25px;
+        flex-wrap: wrap;
+    ">
+        <div>
+            <h2 style="margin: 0 0 6px 0;">
+                Subscription & Payments
+            </h2>
+
+            <p style="
+                margin: 0;
+                color: #666;
+                font-size: 0.9rem;
+            ">
+                Manage your FasFoods subscription and payment history.
+            </p>
+        </div>
+
+        <span
+            id="subscription-status-badge"
+            style="
+                padding: 8px 16px;
+                border-radius: 30px;
+                font-weight: 700;
+                font-size: 0.8rem;
+                background: #f1f3f5;
+                color: #555;
+            "
+        >
+            Loading...
+        </span>
+    </div>
+
+
+    <div
+        id="subscription-offline-warning"
+        style="
+            display: none;
+            background: #fff3cd;
+            border: 1px solid #ffe69c;
+            color: #664d03;
+            padding: 18px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+        "
+    >
+        <div style="
+            display: flex;
+            gap: 12px;
+            align-items: flex-start;
+        ">
+            <i
+                class="fas fa-exclamation-triangle"
+                style="font-size: 1.4rem; margin-top: 2px;"
+            ></i>
+
+            <div>
+                <strong>Subscription overdue — Shop Offline</strong>
+
+                <p style="margin: 6px 0 0 0;">
+                    Customers cannot currently place orders from your shop.
+                    Pay your R99 subscription to reactivate it.
+                </p>
+            </div>
+        </div>
+    </div>
+
+
+    <div style="
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 15px;
+        margin-bottom: 25px;
+    ">
+
+        <div style="
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        ">
+            <div style="
+                color: #777;
+                font-size: 0.8rem;
+                margin-bottom: 8px;
+            ">
+                PLAN
+            </div>
+
+            <strong
+                id="subscription-plan"
+                style="font-size: 1.2rem;"
+            >
+                Paid
+            </strong>
+        </div>
+
+
+        <div style="
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        ">
+            <div style="
+                color: #777;
+                font-size: 0.8rem;
+                margin-bottom: 8px;
+            ">
+                MONTHLY PRICE
+            </div>
+
+            <strong style="
+                font-size: 1.2rem;
+                color: var(--primary);
+            ">
+                R99.00
+            </strong>
+        </div>
+
+
+        <div style="
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        ">
+            <div style="
+                color: #777;
+                font-size: 0.8rem;
+                margin-bottom: 8px;
+            ">
+                NEXT PAYMENT
+            </div>
+
+            <strong
+                id="subscription-next-payment"
+                style="font-size: 1rem;"
+            >
+                -
+            </strong>
+        </div>
+
+
+        <div style="
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        ">
+            <div style="
+                color: #777;
+                font-size: 0.8rem;
+                margin-bottom: 8px;
+            ">
+                PAID UNTIL
+            </div>
+
+            <strong
+                id="subscription-paid-until"
+                style="font-size: 1rem;"
+            >
+                -
+            </strong>
+        </div>
+
+    </div>
+
+
+    <div style="
+        background: white;
+        border-radius: 12px;
+        padding: 22px;
+        margin-bottom: 25px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+    ">
+
+        <div style="
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 15px;
+            flex-wrap: wrap;
+        ">
+
+            <div>
+                <h3 style="margin: 0 0 6px 0;">
+                    Monthly Subscription
+                </h3>
+
+                <p style="
+                    margin: 0;
+                    color: #666;
+                    font-size: 0.9rem;
+                ">
+                    FasFoods Paid Plan
+                </p>
+            </div>
+
+            <div style="text-align: right;">
+                <strong style="
+                    font-size: 1.6rem;
+                    color: var(--primary);
+                ">
+                    R99
+                </strong>
+
+                <div style="
+                    color: #888;
+                    font-size: 0.75rem;
+                ">
+                    per month
+                </div>
+            </div>
+
+        </div>
+
+        <button
+            id="pay-shop-subscription-btn"
+            class="btn-primary"
+            style="margin-top: 20px;"
+        >
+            <i class="fas fa-lock"></i>
+            Pay R99 with Ozow
+        </button>
+
+        <small style="
+            display: block;
+            text-align: center;
+            color: #888;
+            margin-top: 10px;
+        ">
+            Secure payment powered by Ozow
+        </small>
+
+    </div>
+
+
+    <div style="
+        background: white;
+        border-radius: 12px;
+        padding: 22px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+    ">
+
+        <h3 style="margin: 0 0 20px 0;">
+            Payment History
+        </h3>
+
+        <div id="shop-payment-history">
+            <div class="empty-state">
+                <i class="fas fa-receipt"></i>
+                <p>Loading payment history...</p>
+            </div>
+        </div>
+
+    </div>
+
+</div>
+
+<div class="admin-section" id="shop-adverts">
+    <h2>Shop Advertisements</h2>
+    <p style="margin-top:10px; margin-bottom: 30px;">View active advertisements for your shop.</p>
+    
+    <div id="shop-adverts-list">
+        <div class="empty-state">
+            <i class="fas fa-ad"></i>
+            <p>Loading advertisements...</p>
+        </div>
+    </div>
+</div>
+        
+        <div class="admin-section" id="shop-notifications">
+            <h2>Notifications</h2>
+            <div id="shop-notifications-list">
+                <div class="empty-state">
+                    <i class="fas fa-bell-slash"></i>
+                    <p>No notifications yet</p>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    setupShopOrdersEventListeners();
+    await loadShopMenuItems();
+    await loadShopOrders();
+    await loadShopStats();
+    await loadShopNotifications();
+    await loadShopCustomers();
+    await loadShopStats();
+
+    setupShopCustomersEventListeners();
+    setupDashboardEventListeners();
+
+loadShopStats('today');
+    
+    await loadShopNotifications();
+
+     setTimeout(() => {
+        setupShopAdminEventListeners();
+    }, 100);
+}
+
+
+
+function setupShopCustomersEventListeners() {
+    const registerBtn = document.getElementById('register-customer-btn');
+    if (registerBtn) {
+
+        registerBtn.replaceWith(registerBtn.cloneNode(true));
+        
+        const newRegisterBtn = document.getElementById('register-customer-btn');
+        newRegisterBtn.addEventListener('click', registerCustomer);
+    }
+}
+
+function setupShopAdminEventListeners() {
+    const saveHoursBtn = document.getElementById('save-working-hours-btn');
+    if (saveHoursBtn) {
+        saveHoursBtn.addEventListener('click', saveWorkingHours);
+    }
+    
+    const updateShopBtn = document.getElementById('update-shop-btn');
+    if (updateShopBtn) {
+        updateShopBtn.addEventListener('click', updateShopSettings);
+    }
+    
+    const tempClosedToggle = document.getElementById('temporary-closed-toggle');
+    if (tempClosedToggle) {
+
+        const newToggle = tempClosedToggle.cloneNode(true);
+        tempClosedToggle.parentNode.replaceChild(newToggle, tempClosedToggle);
+        
+        newToggle.addEventListener('change', function() {
+            const timeInputs = document.querySelectorAll('.time-input');
+            const closedCheckboxes = document.querySelectorAll('.closed-checkbox');
+            const daySchedules = document.querySelectorAll('.day-schedule');
+            
+            if (this.checked) {
+                timeInputs.forEach(input => {
+                    input.disabled = true;
+                    input.style.backgroundColor = '#f0f0f0';
+                    input.style.opacity = '0.6';
+                });
+                
+                closedCheckboxes.forEach(checkbox => {
+                    checkbox.disabled = true;
+                    checkbox.style.opacity = '0.6';
+                });
+                
+                daySchedules.forEach(schedule => {
+                    schedule.style.opacity = '0.6';
+                });
+                
+                let hint = document.getElementById('temp-closed-hint');
+                if (!hint) {
+                    hint = document.createElement('div');
+                    hint.id = 'temp-closed-hint';
+                    hint.style.cssText = `
+                        background: #fff3cd;
+                        border: 1px solid #ffeaa7;
+                        color: #856404;
+                        padding: 10px;
+                        border-radius: 5px;
+                        margin: 10px 0;
+                        text-align: center;
+                    `;
+                    hint.innerHTML = '<i class="fas fa-info-circle"></i> Working hours are disabled while shop is temporarily closed. You can still save changes - uncheck "Temporarily Closed" to re-enable working hours editing.';
+                    
+                    const container = document.getElementById('working-hours-container');
+                    if (container) {
+                        container.parentNode.insertBefore(hint, container.nextSibling);
+                    }
+                }
+            } else {
+                timeInputs.forEach(input => {
+                    input.disabled = false;
+                    input.style.backgroundColor = '';
+                    input.style.opacity = '1';
+                });
+                
+                closedCheckboxes.forEach(checkbox => {
+                    checkbox.disabled = false;
+                    checkbox.style.opacity = '1';
+                });
+                
+                daySchedules.forEach(schedule => {
+                    schedule.style.opacity = '1';
+                });
+                
+                const hint = document.getElementById('temp-closed-hint');
+                if (hint) hint.remove();
+            }
+        });
+        
+        setTimeout(() => {
+            if (newToggle.checked) {
+                const timeInputs = document.querySelectorAll('.time-input');
+                const closedCheckboxes = document.querySelectorAll('.closed-checkbox');
+                const daySchedules = document.querySelectorAll('.day-schedule');
+                
+                timeInputs.forEach(input => {
+                    input.disabled = true;
+                    input.style.backgroundColor = '#f0f0f0';
+                    input.style.opacity = '0.6';
+                });
+                
+                closedCheckboxes.forEach(checkbox => {
+                    checkbox.disabled = true;
+                    checkbox.style.opacity = '0.6';
+                });
+                
+                daySchedules.forEach(schedule => {
+                    schedule.style.opacity = '0.6';
+                });
+                
+                const hint = document.createElement('div');
+                hint.id = 'temp-closed-hint';
+                hint.style.cssText = `
+                    background: #fff3cd;
+                    border: 1px solid #ffeaa7;
+                    color: #856404;
+                    padding: 10px;
+                    border-radius: 5px;
+                    margin: 10px 0;
+                    text-align: center;
+                `;
+                hint.innerHTML = '<i class="fas fa-info-circle"></i> Working hours are disabled while shop is temporarily closed. You can still save changes - uncheck "Temporarily Closed" to re-enable working hours editing.';
+                
+                const container = document.getElementById('working-hours-container');
+                if (container) {
+                    const existingHint = document.getElementById('temp-closed-hint');
+                    if (existingHint) existingHint.remove();
+                    container.parentNode.insertBefore(hint, container.nextSibling);
+                }
+            }
+        }, 100);
+    }
+}
+
+setupShopAdminEventListeners();
+
+async function loadShopMenuItems() {
+    if (!currentShop) return;
+    
+    try {
+        const { data: menuItems, error } = await supabase
+            .from('menu_items')
+            .select('id, name, price')
+            .eq('shop_id', currentShop.id)
+            .eq('is_available', true)
+            .order('name');
+        
+        if (error) throw error;
+        
+        const menuSelect = document.getElementById('menu-item-select');
+        if (menuSelect) {
+            menuSelect.innerHTML = '<option value="">Select from menu</option>' +
+                menuItems.map(item => 
+                    `<option value="${item.id}" data-price="${item.price}">${item.name} - R${parseFloat(item.price).toFixed(2)}</option>`
+                ).join('');
+        }
+        
+        document.querySelectorAll('.offline-item-select').forEach(select => {
+            select.innerHTML = '<option value="">Select item</option>' +
+                menuItems.map(item => 
+                    `<option value="${item.id}" data-price="${item.price}">${item.name} - R${parseFloat(item.price).toFixed(2)}</option>`
+                ).join('');
+        });
+        
+    } catch (error) {
+        console.error("Error loading menu items:", error);
+    }
+}
+
+
+function setupShopOrdersEventListeners() {
+    document.getElementById('toggle-offline-order-btn').addEventListener('click', function() {
+        const form = document.getElementById('offline-order-form');
+        form.style.display = form.style.display === 'none' ? 'block' : 'none';
+        this.innerHTML = form.style.display === 'none' ? 
+            '<i class="fas fa-cash-register"></i> Add Walk-in Order' : 
+            '<i class="fas fa-times"></i> Close Form';
+    });
+    
+    document.getElementById('cancel-offline-order-btn').addEventListener('click', function() {
+        document.getElementById('offline-order-form').style.display = 'none';
+        document.getElementById('toggle-offline-order-btn').innerHTML = '<i class="fas fa-cash-register"></i> Add Walk-in Order';
+        resetOfflineOrderForm();
+    });
+    
+    document.getElementById('menu-item-select').addEventListener('change', function() {
+        if (this.value) {
+            addSelectedMenuItem(this.value);
+            this.value = ''; 
+        }
+    });
+    
+    document.getElementById('create-offline-order-btn').addEventListener('click', createOfflineOrder);
+    document.getElementById('add-offline-item').addEventListener('click', addOfflineOrderItem);
+    document.getElementById('orders-filter').addEventListener('change', loadShopOrders);
+    document.getElementById('refresh-orders-btn').addEventListener('click', loadShopOrders);
+    
+    document.addEventListener('click', function(e) {
+        if (e.target.classList.contains('remove-offline-item')) {
+            const items = document.querySelectorAll('.offline-order-item');
+            if (items.length > 1) {
+                e.target.closest('.offline-order-item').remove();
+            }
+        }
+    });
+    
+    document.addEventListener('change', function(e) {
+        if (e.target.classList.contains('offline-item-select') && e.target.value) {
+            const selectedOption = e.target.options[e.target.selectedIndex];
+            const price = selectedOption.getAttribute('data-price');
+        }
+    });
+}
+
+
+
+async function generateOrderNumber(shopId, orderType = 'online') {
+    try {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        
+        const { count, error } = await supabase
+            .from('orders')
+            .select('*', { count: 'exact', head: true })
+            .eq('shop_id', shopId)
+            .gte('created_at', today.toISOString())
+            .lt('created_at', tomorrow.toISOString());
+        
+        if (error) throw error;
+        
+        const orderNumber = `A-${String((count || 0) + 1).padStart(4, '0')}`;
+        return orderNumber;
+        
+    } catch (error) {
+        console.error("Error generating order number:", error);
+        const timestamp = Date.now().toString().slice(-4);
+        return `A-${timestamp}`;
+    }
+}
+
+function addOfflineOrderItem() {
+    const container = document.getElementById('offline-order-items');
+    const newItem = document.createElement('div');
+    newItem.className = 'offline-order-item';
+    newItem.innerHTML = `
+        <div style="display: grid; grid-template-columns: 2fr 1fr auto; gap: 10px; margin-bottom: 10px; align-items: center;">
+            <select class="form-input offline-item-select" required>
+                <option value="">Select item</option>
+            </select>
+            <input type="number" class="form-input offline-item-quantity" placeholder="Qty" value="1" min="1" required>
+            <button type="button" class="btn-danger remove-offline-item" style="padding: 8px 12px;">×</button>
+        </div>
+    `;
+    container.appendChild(newItem);
+    
+    loadShopMenuItems();
+}
+
+function addSelectedMenuItem(menuItemId) {
+    const selectedOption = document.querySelector(`#menu-item-select option[value="${menuItemId}"]`);
+    if (!selectedOption) return;
+    
+    const itemName = selectedOption.text.split(' - R')[0];
+    const price = parseFloat(selectedOption.getAttribute('data-price'));
+    
+    const container = document.getElementById('offline-order-items');
+    const newItem = document.createElement('div');
+    newItem.className = 'offline-order-item';
+    newItem.innerHTML = `
+        <div style="display: grid; grid-template-columns: 2fr 1fr auto; gap: 10px; margin-bottom: 10px; align-items: center;">
+            <select class="form-input offline-item-select" required>
+                <option value="${menuItemId}" selected>${itemName} - R${price.toFixed(2)}</option>
+            </select>
+            <input type="number" class="form-input offline-item-quantity" placeholder="Qty" value="1" min="1" required>
+            <button type="button" class="btn-danger remove-offline-item" style="padding: 8px 12px;">×</button>
+        </div>
+    `;
+    
+    loadShopMenuItems().then(() => {
+        const select = newItem.querySelector('.offline-item-select');
+        select.value = menuItemId;
+    });
+    
+    container.appendChild(newItem);
+}
+
+async function createOfflineOrder() {
+    const customerName = document.getElementById('offline-customer-name').value.trim();
+    const collectionMethod = document.getElementById('offline-collection-method').value;
+    const paymentMethod = document.getElementById('offline-payment-method').value;
+    
+    if (!customerName) {
+        alert('Please enter customer name');
+        return;
+    }
+    
+    const items = [];
+    let totalAmount = 0;
+    let hasErrors = false;
+    
+    const itemElements = document.querySelectorAll('.offline-order-item');
+    for (const itemElement of itemElements) {
+        const select = itemElement.querySelector('.offline-item-select');
+        const quantity = parseInt(itemElement.querySelector('.offline-item-quantity').value);
+        
+        if (!select.value || isNaN(quantity)) {
+            hasErrors = true;
+            alert('Please fill all item fields correctly');
+            break;
+        }
+        
+        const selectedOption = select.options[select.selectedIndex];
+        const name = selectedOption.text.split(' - R')[0];
+        const price = parseFloat(selectedOption.getAttribute('data-price'));
+        
+        items.push({
+            name: name,
+            price: price,
+            quantity: quantity
+        });
+        totalAmount += price * quantity;
+    }
+    
+    if (hasErrors || items.length === 0) {
+        alert('Please add at least one valid order item');
+        return;
+    }
+    
+    try {
+        const orderNumber = await generateOrderNumber(currentShop.id, 'offline');
+        
+        const { data: order, error } = await supabase
+            .from('orders')
+            .insert([{
+                shop_id: currentShop.id,
+                order_number: orderNumber,
+                order_type: 'offline',
+                customer_name: customerName,
+                customer_phone: null,
+                customer_email: null,
+                total_amount: totalAmount,
+                collection_method: collectionMethod,
+                payment_method: paymentMethod,
+                order_schedule: 'now',
+                status: 'waiting',
+                items: items
+            }])
+            .select()
+            .single();
+        
+        if (error) throw error;
+        
+        showToast(`Order ${orderNumber} created successfully!`);
+        
+        resetOfflineOrderForm();
+        document.getElementById('offline-order-form').style.display = 'none';
+        document.getElementById('toggle-offline-order-btn').innerHTML = '<i class="fas fa-cash-register"></i> Add Walk-in Order';
+        
+        await loadShopOrders();
+        await loadShopStats();
+        
+    } catch (error) {
+        console.error("Error creating offline order:", error);
+        showToast('Error creating order: ' + error.message, 'error');
+    }
+}
+
+function resetOfflineOrderForm() {
+    document.getElementById('offline-customer-name').value = '';
+    document.getElementById('offline-order-items').innerHTML = `
+        <div class="offline-order-item" style="display: grid; grid-template-columns: 2fr 1fr auto; gap: 10px; margin-bottom: 10px; align-items: center;">
+            <select class="form-input offline-item-select" required>
+                <option value="">Select item</option>
+            </select>
+            <input type="number" class="form-input offline-item-quantity" placeholder="Qty" value="1" min="1" required>
+            <button type="button" class="btn-danger remove-offline-item" style="padding: 8px 12px;">×</button>
+        </div>
+    `;
+    loadShopMenuItems();
+}
+
+
+async function loadShopOrders() {
+    if (!currentShop) return;
+    
+    const filter = document.getElementById('orders-filter').value;
+    
+    try {
+        let query = supabase
+            .from('orders')
+            .select('*')
+            .eq('shop_id', currentShop.id)
+            .order('created_at', { ascending: false });
+        
+        if (filter === 'active') {
+            query = query.in('status', ['waiting', 'preparing', 'ready']);
+        } else if (filter === 'today') {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const tomorrow = new Date(today);
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            query = query.gte('created_at', today.toISOString())
+                         .lt('created_at', tomorrow.toISOString());
+        } else if (filter !== 'all') {
+            query = query.eq('status', filter);
+        }
+        
+        const { data: orders, error } = await query;
+        
+        if (error) throw error;
+        
+        const ordersList = document.getElementById('shop-orders-list');
+        
+        if (!orders || orders.length === 0) {
+            ordersList.innerHTML = `
+                <div class="empty-state">
+                    <i class="fas fa-shopping-cart"></i>
+                    <p>No orders found</p>
+                    <p><small>${filter !== 'all' ? `No ${filter} orders` : 'No orders yet'}</small></p>
+                </div>
+            `;
+            return;
+        }
+        
+        ordersList.innerHTML = orders.map(order => {
+
+            const isScheduled = order.order_schedule === 'later' && order.scheduled_time;
+            const scheduledDate = isScheduled ? new Date(order.scheduled_time) : null;
+            const now = new Date();
+            
+            const orderTime = new Date(order.created_at);
+            const saOrderTime = formatSATime(orderTime);
+            
+            let scheduledBadge = '';
+            if (isScheduled) {
+                const saScheduledTime = formatSATime(scheduledDate);
+                scheduledBadge = `
+                    <div style="background: #fff3cd; color: #856404; padding: 6px 10px; border-radius: 8px; border: 1px solid #ffeaa7; margin-top: 8px; font-size: 0.85rem;">
+                        <i class="fas fa-clock"></i> 
+                        <strong>Scheduled for:</strong> ${saScheduledTime}
+                        ${scheduledDate > now ? '<span style="color: #28a745; margin-left: 10px;">(Future)</span>' : '<span style="color: #dc3545; margin-left: 10px;">(Past)</span>'}
+                    </div>
+                `;
+            }
+            
+            return `
+                <div class="order-card" style="background: white; border-radius: 10px; padding: 20px; margin-bottom: 15px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); border-left: 4px solid ${getStatusColor(order.status)} ${isScheduled ? '; border-top: 3px solid #ffc107' : ''}">
+                    <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 15px;">
+                        <div style="flex: 1;">
+                            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+                                <h3 style="margin: 0; font-size: 1.2rem;">
+                                    ${order.order_number}
+                                    ${isScheduled ? '<i class="fas fa-clock" style="color: #ffc107; margin-left: 5px;"></i>' : ''}
+                                </h3>
+                                <span style="background: ${order.order_type === 'online' ? '#17a2b8' : '#6c757d'}; color: white; padding: 4px 8px; border-radius: 12px; font-size: 0.7rem;">
+                                    ${order.order_type}
+                                    ${isScheduled ? ' • Scheduled' : ''}
+                                </span>
+                                <span style="color: #666; font-size: 0.9rem;">
+                                    ${saOrderTime}
+                                </span>
+                            </div>
+                            
+                            <div style="color: #666; font-size: 0.9rem;">
+                                <strong>Customer:</strong> 
+                                ${order.order_type === 'online' ? 
+                                    order.customer_email : 
+                                    order.customer_name
+                                }
+                            </div>
+                            ${scheduledBadge}
+                        </div>
+                        
+                        <div style="text-align: right;">
+                            <div style="font-size: 1.3rem; font-weight: bold; color: var(--primary); margin-bottom: 8px;">
+                                R${parseFloat(order.total_amount).toFixed(2)}
+                            </div>
+                            <div style="display: flex; gap: 8px;">
+                                <button class="btn-view-order" data-order-id="${order.id}" style="background: #17a2b8; color: white; border: none; padding: 6px 12px; border-radius: 5px; cursor: pointer; font-size: 0.8rem;">
+                                    <i class="fas fa-eye"></i> View
+                                </button>
+                                ${order.status !== 'cancelled' && order.status !== 'completed' ? `
+                                    <button class="btn-cancel-order" data-order-id="${order.id}" style="background: #dc3545; color: white; border: none; padding: 6px 12px; border-radius: 5px; cursor: pointer; font-size: 0.8rem;">
+                                        <i class="fas fa-times"></i> Cancel
+                                    </button>
+                                ` : ''}
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div style="display: grid; grid-template-columns: 1fr auto; gap: 15px; align-items: center;">
+                        <div>
+                            <div style="color: #666; font-size: 0.9rem; margin-bottom: 5px;">
+                                <strong>Items:</strong> 
+                                ${order.items.map(item => `${item.name} (×${item.quantity})`).join(', ')}
+                            </div>
+                            <div style="color: #666; font-size: 0.9rem;">
+                                <strong>Collection:</strong> ${order.collection_method} • 
+                                <strong>Payment:</strong> ${order.payment_method}
+                                ${order.order_schedule === 'now' ? '• <span style="color: var(--accent);"><i class="fas fa-bolt"></i> Serve Now</span>' : ''}
+                            </div>
+                        </div>
+                        
+                        <select class="order-status-select" data-order-id="${order.id}" 
+                                style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 5px; background: white; cursor: pointer; min-width: 140px;">
+                            <option value="waiting" ${order.status === 'waiting' ? 'selected' : ''}>⏳ Waiting</option>
+                            <option value="preparing" ${order.status === 'preparing' ? 'selected' : ''}>👨‍🍳 Preparing</option>
+                            <option value="ready" ${order.status === 'ready' ? 'selected' : ''}>✅ Ready</option>
+                            <option value="completed" ${order.status === 'completed' ? 'selected' : ''}>📦 Completed</option>
+                            <option value="cancelled" ${order.status === 'cancelled' ? 'selected' : ''}>❌ Cancelled</option>
+                        </select>
+                    </div>
+                </div>
+            `;
+        }).join('');
+        
+        ordersList.querySelectorAll('.btn-view-order').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const orderId = this.getAttribute('data-order-id');
+                viewOrderDetails(orderId);
+            });
+        });
+        
+        ordersList.querySelectorAll('.btn-cancel-order').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const orderId = this.getAttribute('data-order-id');
+                cancelShopOrder(orderId);
+            });
+        });
+        
+        ordersList.querySelectorAll('.order-status-select').forEach(select => {
+            select.addEventListener('change', function() {
+                const orderId = this.getAttribute('data-order-id');
+                updateOrderStatus(orderId, this.value);
+            });
+        });
+        
+    } catch (error) {
+        console.error("Error loading shop orders:", error);
+        const ordersList = document.getElementById('shop-orders-list');
+        ordersList.innerHTML = `
+            <div class="empty-state">
+                <i class="fas fa-exclamation-triangle"></i>
+                <p>Error loading orders</p>
+            </div>
+        `;
+    }
+}
+
+function getStatusColor(status) {
+    const colors = {
+        'waiting': '#17a2b8',
+        'preparing': '#ffc107', 
+        'ready': '#28a745',
+        'completed': '#6c757d',
+        'cancelled': '#dc3545'
+    };
+    return colors[status] || '#6c757d';
+}
+
+async function viewOrderDetails(orderId) {
+    try {
+        const { data: order, error } = await supabase
+            .from('orders')
+            .select('*')
+            .eq('id', orderId)
+            .single();
+        
+        if (error) throw error;
+        
+        const modal = document.createElement('div');
+        modal.className = 'modal-overlay active';
+
+        modal.innerHTML = `
+            <div class="page-modal" style="max-width: 500px;">
+                <div class="page-header">
+                    <h2>Order ${order.order_number}</h2>
+                    <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="page-content">
+                    <div style="margin-bottom: 20px;">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                            <div>
+                                <strong>Type:</strong> ${order.order_type}
+                            </div>
+                            <div>
+                                <strong>Status:</strong> ${order.status}
+                            </div>
+                            <div>
+                                <strong>Collection:</strong> ${order.collection_method}
+                            </div>
+                            <div>
+                                <strong>Payment:</strong> ${order.payment_method}
+                            </div>
+                        </div>
+                        
+                        <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                                <strong>Customer Information</strong>
+                                ${order.order_type === 'online' ? `
+                                    <button id="toggle-contact-btn" style="background: var(--primary); color: white; border: none; padding: 6px 12px; border-radius: 5px; cursor: pointer; font-size: 0.8rem;">
+                                        <i class="fas fa-phone"></i> Show Phone Number
+                                    </button>
+                                ` : ''}
+                            </div>
+                            
+                            <div id="customer-info-display">
+                                ${order.order_type === 'online' ? `
+                                    <div>
+                                        <strong>Email:</strong><br>
+                                        ${order.customer_email}
+                                    </div>
+                                    <div style="margin-top: 8px; color: #666; font-size: 0.9rem;">
+                                        <i class="fas fa-info-circle"></i> Click the button to view phone number
+                                    </div>
+                                ` : `
+                                    <div>
+                                        <strong>Name:</strong><br>
+                                        ${order.customer_name}
+                                    </div>
+                                `}
+                            </div>
+                        </div>
+                        
+                        ${order.collection_method === 'delivery' ? `
+                            <div style="background: #e7f3ff; padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid var(--accent);">
+                                <strong style="display: block; margin-bottom: 8px;">
+                                    <i class="fas fa-map-marker-alt"></i> Delivery Address
+                                </strong>
+                                ${order.delivery_address ? `
+                                    <div style="font-size: 0.95rem; line-height: 1.4;">
+                                        ${order.delivery_address}
+                                    </div>
+                                ` : `
+                                    <div style="color: #666; font-style: italic;">
+                                        No delivery address provided
+                                    </div>
+                                `}
+                            </div>
+                        ` : ''}
+                    </div>
+                    
+                    <h4>Order Items</h4>
+                    ${order.items.map(item => `
+                        <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #eee;">
+                            <div>${item.name} × ${item.quantity}</div>
+                            <div>R${(item.price * item.quantity).toFixed(2)}</div>
+                        </div>
+                    `).join('')}
+                    
+                    <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 1.2rem; margin-top: 15px; padding-top: 15px; border-top: 2px solid var(--primary);">
+                        <div>Total:</div>
+                        <div>R${parseFloat(order.total_amount).toFixed(2)}</div>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        
+        if (order.order_type === 'online') {
+            setupContactToggle(order);
+        }
+        
+        modal.addEventListener('click', function(e) {
+            if (e.target === this) {
+                this.remove();
+            }
+        });
+        
+    } catch (error) {
+        console.error("Error loading order details:", error);
+        showToast('Error loading order details', 'error');
+    }
+}
+
+async function setupContactToggle(order) {
+    const toggleBtn = document.getElementById('toggle-contact-btn');
+    const customerInfoDisplay = document.getElementById('customer-info-display');
+    
+    if (!toggleBtn || !customerInfoDisplay) return;
+    
+    let showingPhone = false;
+    
+    let customerPhone = null;
+    let customerName = null;
+    
+    try {
+        const { data: profile, error } = await supabase
+            .from('user_profiles')
+            .select('phone_number, full_name')
+            .eq('customer_email', order.customer_email)
+            .single();
+        
+        if (!error && profile) {
+            customerPhone = profile.phone_number;
+            customerName = profile.full_name;
+        }
+    } catch (error) {
+        console.error("Error fetching customer profile:", error);
+    }
+    
+    toggleBtn.addEventListener('click', function() {
+        showingPhone = !showingPhone;
+        
+        if (showingPhone) {
+            if (customerPhone) {
+                customerInfoDisplay.innerHTML = `
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <div>
+                            <strong>Phone:</strong><br>
+                            <div style="font-size: 1.1rem; font-weight: bold; color: var(--primary);">
+                                <i class="fas fa-phone"></i> ${customerPhone}
+                            </div>
+                        </div>
+                        ${customerName ? `
+                            <div style="padding-left: 15px; border-left: 1px solid #ddd;">
+                                <strong>Name:</strong><br>
+                                ${customerName}
+                            </div>
+                        ` : ''}
+                    </div>
+                    <div style="margin-top: 8px; color: #666; font-size: 0.9rem;">
+                        <i class="fas fa-info-circle"></i> This is the customer's registered phone number
+                    </div>
+                `;
+            } else {
+                customerInfoDisplay.innerHTML = `
+                    <div style="text-align: center; padding: 20px;">
+                        <div style="font-size: 3rem; color: #ccc; margin-bottom: 10px;">
+                            <i class="fas fa-phone-slash"></i>
+                        </div>
+                        <strong style="color: #666;">Phone Number Not Available</strong>
+                        <p style="color: #666; font-size: 0.9rem; margin-top: 5px;">
+                            Customer hasn't provided a phone number yet.
+                        </p>
+                    </div>
+                `;
+            }
+            
+            toggleBtn.innerHTML = '<i class="fas fa-envelope"></i> Show Email Address';
+            toggleBtn.style.background = '#17a2b8';
+            
+        } else {
+            customerInfoDisplay.innerHTML = `
+                <div>
+                    <strong>Email:</strong><br>
+                    <div style="font-size: 1.1rem; font-weight: bold;">
+                        <i class="fas fa-envelope"></i> ${order.customer_email}
+                    </div>
+                </div>
+                <div style="margin-top: 8px; color: #666; font-size: 0.9rem;">
+                    <i class="fas fa-info-circle"></i> Click the button to view phone number
+                </div>
+            `;
+            
+            toggleBtn.innerHTML = '<i class="fas fa-phone"></i> Show Phone Number';
+            toggleBtn.style.background = 'var(--primary)';
+        }
+    });
+    
+    if (customerPhone) {
+        const hint = document.createElement('div');
+        hint.style.cssText = `
+            margin-top: 10px;
+            padding: 8px;
+            background: #fff3cd;
+            border-radius: 5px;
+            font-size: 0.8rem;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        `;
+        hint.innerHTML = `
+            <i class="fas fa-info-circle"></i> 
+            Customer has provided a phone number. Click the button to view it.
+        `;
+        customerInfoDisplay.appendChild(hint);
+    }
+}
+
+async function loadShopStats(period = 'today') {
+    if (!currentShop) return;
+    
+    try {
+        showLoading('Loading dashboard...');
+        
+        let startDate, endDate;
+        const now = new Date();
+        
+        switch(period) {
+            case 'today':
+                startDate = new Date(now.setHours(0, 0, 0, 0));
+                endDate = new Date(now.setHours(23, 59, 59, 999));
+                break;
+            case 'yesterday':
+                const yesterday = new Date(now);
+                yesterday.setDate(yesterday.getDate() - 1);
+                startDate = new Date(yesterday.setHours(0, 0, 0, 0));
+                endDate = new Date(yesterday.setHours(23, 59, 59, 999));
+                break;
+            case 'week':
+                startDate = new Date(now.setDate(now.getDate() - now.getDay()));
+                startDate.setHours(0, 0, 0, 0);
+                endDate = new Date();
+                break;
+            case 'month':
+                startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+                endDate = new Date();
+                break;
+            case 'last_month':
+                startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+                endDate = new Date(now.getFullYear(), now.getMonth(), 0);
+                break;
+            case 'custom':
+                const startInput = document.getElementById('custom-start-date').value;
+                const endInput = document.getElementById('custom-end-date').value;
+                if (startInput && endInput) {
+                    startDate = new Date(startInput + 'T00:00:00');
+                    endDate = new Date(endInput + 'T23:59:59');
+                } else {
+                    startDate = new Date(now.setHours(0, 0, 0, 0));
+                    endDate = new Date();
+                }
+                break;
+            case 'all':
+            default:
+                startDate = null;
+                endDate = null;
+                break;
+        }
+        
+        let query = supabase
+            .from('orders')
+            .select('*')
+            .eq('shop_id', currentShop.id);
+        
+        if (startDate && endDate) {
+            query = query.gte('created_at', startDate.toISOString())
+                         .lte('created_at', endDate.toISOString());
+        }
+        
+        const { data: orders, error } = await query;
+        
+        if (error) throw error;
+        
+        const totalOrders = orders?.length || 0;
+        const pendingOrders = orders?.filter(order => 
+            ['waiting', 'preparing', 'ready'].includes(order.status)
+        ).length || 0;
+        
+        const totalRevenue = orders
+            ?.filter(order => order.status !== 'cancelled')
+            .reduce((sum, order) => sum + parseFloat(order.total_amount), 0) || 0;
+        
+        const completedOrders = orders?.filter(order => order.status === 'completed').length || 0;
+        const cancelledOrders = orders?.filter(order => order.status === 'cancelled').length || 0;
+        
+        const validOrders = orders?.filter(order => order.status !== 'cancelled') || [];
+        const averageOrderValue = validOrders.length > 0 
+            ? totalRevenue / validOrders.length 
+            : 0;
+        
+        const { count: customersCount, error: customersError } = await supabase
+            .from('customer_registrations')
+            .select('*', { count: 'exact', head: true })
+            .eq('shop_id', currentShop.id);
+        
+        let topSellingItem = '-';
+        if (orders && orders.length > 0) {
+            const itemCounts = {};
+            orders.forEach(order => {
+                if (order.status !== 'cancelled') {
+                    order.items?.forEach(item => {
+                        const key = item.name || item.id;
+                        itemCounts[key] = (itemCounts[key] || 0) + (item.quantity || 1);
+                    });
+                }
+            });
+            
+            const mostSold = Object.entries(itemCounts).sort((a, b) => b[1] - a[1])[0];
+            if (mostSold) {
+                topSellingItem = mostSold[0].length > 12 
+                    ? mostSold[0].substring(0, 12) + '...' 
+                    : mostSold[0];
+            }
+        }
+        
+        document.getElementById('shop-customers-count').textContent = customersCount || 0;
+        document.getElementById('pending-orders-count').textContent = pendingOrders;
+        document.getElementById('total-orders-count').textContent = totalOrders;
+        document.getElementById('total-revenue').textContent = 'R' + totalRevenue.toFixed(2);
+        document.getElementById('completed-orders-count').textContent = completedOrders;
+        document.getElementById('cancelled-orders-count').textContent = cancelledOrders;
+        document.getElementById('average-order-value').textContent = 'R' + averageOrderValue.toFixed(2);
+        document.getElementById('top-selling-item').textContent = topSellingItem;
+        
+        await loadRecentOrders(orders);
+        
+        hideLoading();
+        
+    } catch (error) {
+        console.error("Error loading shop stats:", error);
+        hideLoading();
+        showToast('Error loading dashboard', 'error');
+    }
+}
+
+async function loadRecentOrders(orders) {
+    if (!orders || orders.length === 0) {
+        document.getElementById('recent-orders-list').innerHTML = `
+            <div class="empty-state" style="padding: 20px;">
+                <i class="fas fa-shopping-cart"></i>
+                <p>No orders yet</p>
+            </div>
+        `;
+        return;
+    }
+    
+    const recentOrders = [...orders]
+        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+        .slice(0, 5);
+    
+    const recentList = document.getElementById('recent-orders-list');
+    recentList.innerHTML = recentOrders.map(order => `
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 15px; margin-bottom: 10px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid ${getStatusColor(order.status)};">
+            <div>
+                <div style="font-weight: bold; margin-bottom: 3px;">${order.order_number}</div>
+                <div style="font-size: 0.8rem; color: #666;">
+                    ${order.customer_email || order.customer_name || 'N/A'} • 
+                    ${formatSATime(new Date(order.created_at))}
+                </div>
+            </div>
+            <div style="text-align: right;">
+                <div style="font-weight: bold; color: var(--primary);">R${parseFloat(order.total_amount).toFixed(2)}</div>
+                <div style="font-size: 0.7rem; color: #666;">
+                    ${order.status.charAt(0).toUpperCase() + order.status.slice(1)}
+                </div>
+            </div>
+        </div>
+    `).join('');
+}
+
+function setupDashboardEventListeners() {
+    document.getElementById('dashboard-period').addEventListener('change', function() {
+        const customRange = document.getElementById('custom-date-range');
+        customRange.style.display = this.value === 'custom' ? 'flex' : 'none';
+        loadShopStats(this.value);
+    });
+    
+    document.getElementById('custom-start-date')?.addEventListener('change', function() {
+        if (document.getElementById('dashboard-period').value === 'custom') {
+            loadShopStats('custom');
+        }
+    });
+    
+    document.getElementById('custom-end-date')?.addEventListener('change', function() {
+        if (document.getElementById('dashboard-period').value === 'custom') {
+            loadShopStats('custom');
+        }
+    });
+    
+    document.getElementById('refresh-dashboard-btn')?.addEventListener('click', function() {
+        const period = document.getElementById('dashboard-period').value;
+        loadShopStats(period);
+    });
+}
+
+        async function loadShopCustomers() {
+    if (!currentShop) return;
+    
+    try {
+        const { data: customers, error } = await supabase
+            .from('customer_registrations')
+            .select('*')
+            .eq('shop_id', currentShop.id)
+            .order('registered_at', { ascending: false });
+        
+        if (error) {
+            console.error("Error loading shop customers:", error);
+            return;
+        }
+        
+        const customersList = document.getElementById('shop-customers-list');
+        
+        if (!customers || customers.length === 0) {
+            customersList.innerHTML = `
+                <div class="empty-state">
+                    <i class="fas fa-users"></i>
+                    <p>No customers registered yet</p>
+                    <p><small>Register customers using the form above</small></p>
+                </div>
+            `;
+            return;
+        }
+        
+        customersList.innerHTML = customers.map(customer => `
+            <div class="customer-item" style="background: white; padding: 15px; border-radius: 10px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
+                <div style="flex: 1;">
+                    <div style="font-weight: bold; margin-bottom: 5px;">${customer.customer_email}</div>
+                    <div style="font-size: 0.8rem; color: #666;">
+                        Registered: ${new Date(customer.registered_at).toLocaleDateString()}
+                    </div>
+                </div>
+                <button class="btn-danger remove-customer-btn" data-customer-id="${customer.id}" 
+                        style="background: #dc3545; color: white; border: none; padding: 8px 15px; border-radius: 5px; cursor: pointer; font-size: 0.8rem;">
+                    Remove
+                </button>
+            </div>
+        `).join('');
+        
+        customersList.querySelectorAll('.remove-customer-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const customerId = this.getAttribute('data-customer-id');
+                removeCustomer(customerId);
+            });
+        });
+        
+    } catch (error) {
+        console.error("Error loading shop customers:", error);
+        const customersList = document.getElementById('shop-customers-list');
+        customersList.innerHTML = `
+            <div class="empty-state">
+                <i class="fas fa-exclamation-triangle"></i>
+                <p>Error loading customers</p>
+            </div>
+        `;
+    }
+}
+
+async function removeCustomer(registrationId) {
+    if (!confirm('Are you sure you want to remove this customer?')) {
+        return;
+    }
+    
+    try {
+        const { error } = await supabase
+            .from('customer_registrations')
+            .delete()
+            .eq('id', registrationId);
+        
+        if (error) throw error;
+        
+        showToast('Customer removed successfully!');
+        await loadShopCustomers();
+        await loadShopStats();
+        
+    } catch (error) {
+        console.error("Error removing customer:", error);
+        showToast('Error removing customer', 'error');
+    }
+}
+
+
+async function registerCustomer() {
+    const customerEmail = document.getElementById('customer-email').value.trim();
+    
+    if (!customerEmail) {
+        alert('Please enter customer email');
+        return;
+    }
+    
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(customerEmail)) {
+        alert('Please enter a valid email address');
+        return;
+    }
+    
+    try {
+        const registerBtn = document.getElementById('register-customer-btn');
+        const originalText = registerBtn.innerHTML;
+        registerBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Registering...';
+        registerBtn.disabled = true;
+        
+        const { error } = await supabase
+            .from('customer_registrations')
+            .insert([
+                {
+                    shop_id: currentShop.id,
+                    customer_email: customerEmail
+                }
+            ]);
+        
+        if (error) throw error;
+        
+        showToast('Customer registered successfully!');
+        
+        document.getElementById('customer-email').value = '';
+        
+        await loadShopCustomers();
+        await loadShopStats();
+        
+    } catch (error) {
+        console.error("Error registering customer:", error);
+        
+        if (error.code === '23505') {
+            alert('This customer is already registered to your shop');
+        } else {
+            alert('Error registering customer: ' + error.message);
+        }
+        
+    } finally {
+        const registerBtn = document.getElementById('register-customer-btn');
+        if (registerBtn) {
+            registerBtn.innerHTML = '<i class="fas fa-user-plus"></i> Register Customer';
+            registerBtn.disabled = false;
+        }
+    }
+}
+
+      async function updateShopSettings() {
+    if (!currentShop) {
+        showToast('No shop selected', 'error');
+        return;
+    }
+    
+    const name = document.getElementById('settings-shop-name').value.trim();
+    const phone = document.getElementById('settings-shop-phone').value.trim();
+    const address = document.getElementById('settings-shop-address').value.trim();
+    
+    const deliveryEnabled = document.getElementById('delivery-enabled').checked;
+    const cardPaymentEnabled = document.getElementById('card-payment-enabled').checked;
+    const deliveryCharge = parseFloat(document.getElementById('delivery-charge').value) || 10;
+        
+    try {
+        const btn = document.getElementById('update-shop-btn');
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Updating...';
+        btn.disabled = true;
+        
+        const { error } = await supabase
+            .from('shops')
+            .update({
+
+                phone_number: phone || null,
+                address: address || null,
+                delivery_enabled: deliveryEnabled,
+                card_payment_enabled: cardPaymentEnabled,
+                delivery_charge_within_2km: deliveryCharge
+            })
+            .eq('id', currentShop.id);
+        
+        if (error) throw error;
+        
+        currentShop.phone_number = phone;
+        currentShop.address = address;
+        currentShop.delivery_enabled = deliveryEnabled;
+        currentShop.card_payment_enabled = cardPaymentEnabled;
+        currentShop.delivery_charge_within_2km = deliveryCharge;
+        
+        showToast('Shop settings updated successfully!');
+        
+    } catch (error) {
+        console.error("Error updating shop:", error);
+        showToast('Error updating shop: ' + error.message, 'error');
+    } finally {
+        const btn = document.getElementById('update-shop-btn');
+        if (btn) {
+            btn.innerHTML = '<i class="fas fa-save"></i> Update Shop Settings';
+            btn.disabled = false;
+        }
+    }
+}
+
+const deliveryToggle = document.getElementById('delivery-enabled');
+if (deliveryToggle) {
+    deliveryToggle.addEventListener('change', function() {
+        const deliveryChargeGroup = document.getElementById('delivery-charge-group');
+        if (deliveryChargeGroup) {
+            deliveryChargeGroup.style.display = this.checked ? 'block' : 'none';
+            const chargeInput = document.getElementById('delivery-charge');
+            if (chargeInput) {
+                chargeInput.disabled = !this.checked;
+                if (!this.checked) {
+                    chargeInput.value = '0';
+                }
+            }
+        }
+    });
+}
+
+      
+async function loadDevAdminSection(section) {
+    document.querySelectorAll('#dev-admin-content .admin-section').forEach(s => s.classList.remove('active'));
+    document.getElementById(section).classList.add('active');
+    
+    if (section === 'shop-management') {
+        await loadAllShops();
+    } else if (section === 'menu-management') {
+        const shopSelect = document.getElementById('shop-select-menu');
+        shopSelect.innerHTML = '<option value="">Select a shop</option>' + 
+            allShops.map(shop => `<option value="${shop.id}">${shop.name}</option>`).join('');
+    } else if (section === 'customer-management') {
+        await loadAllCustomers();
+    } else if (section === 'reminder-management') {
+        populateReminderShopSelect();
+    } else if (section === 'advert-management') {
+        await loadAdvertManagement();
+    }
+}
+
+        async function loadShopAdminSection(section) {
+    document.querySelectorAll('#shop-admin-content .admin-section').forEach(s => s.classList.remove('active'));
+    document.getElementById(section).classList.add('active');
+    
+    if (section === 'shop-customers') {
+        await loadShopCustomers();
+        setupShopCustomersEventListeners();
+    } else if (section === 'shop-orders') {
+        await loadShopOrders();
+    } else if (section === 'shop-notifications') {
+        await loadShopNotifications();
+    } else if (section === 'working-hours') {
+    } else if (section === 'shop-settings') {
+    } else if (section === 'shop-adverts') {
+        await loadShopAdverts();
+
+    } else if (section === 'shop-payments') {
+        await loadShopPayments();
+    }
+    if (section === 'shop-orders') {
+        hasNewOrderAlert = false;
+        
+        setTimeout(checkForNewOrders, 500);
+    }
+}
+
+        function showUserView() {
+    document.getElementById('dev-admin-dashboard').classList.remove('active');
+    document.getElementById('shop-admin-dashboard').classList.remove('active');
+    
+    if (orderSyncInterval) {
+        clearInterval(orderSyncInterval);
+        orderSyncInterval = null;
+    }
+    
+    const notification = document.getElementById('new-order-notification');
+    if (notification) {
+        notification.remove();
+    }
+    
+    showLandingPage();
+}
+
+
+async function signInWithGoogle() {
+    try {
+        const { data, error } = await supabase.auth.signInWithOAuth({
+            provider: 'google',
+            options: {
+                redirectTo: window.location.origin 
+            }
+        });
+        
+        if (error) throw error;
+        
+        console.log("Redirecting to Google login...");
+        
+    } catch (error) {
+        console.error("Google sign in error:", error);
+        alert("Error signing in with Google. Please try again.");
+    }
+}
+
+        async function signOutUser() {
+    try {
+        if (orderSyncInterval) {
+            clearInterval(orderSyncInterval);
+            orderSyncInterval = null;
+        }
+        
+        const notification = document.getElementById('new-order-notification');
+        if (notification) {
+            notification.remove();
+        }
+        
+        const { error } = await supabase.auth.signOut();
+        if (error) throw error;
+        
+        console.log("User signed out");
+        
+        lastOrderCheck = null;
+        hasNewOrderAlert = false;
+        
+    } catch (error) {
+        console.error("Sign out error:", error);
+        alert("Error signing out. Please try again.");
+    }
+}
+        
+
+async function sendReminder() {
+    const shopId = document.getElementById('reminder-shop-select').value;
+    const message = document.getElementById('reminder-message').value.trim();
+    const reminderType = document.getElementById('reminder-type').value;
+    
+    if (!shopId) {
+        alert('Please select a shop');
+        return;
+    }
+    
+    if (!message) {
+        alert('Please enter a reminder message');
+        return;
+    }
+    
+    try {
+        const { data, error } = await supabase
+            .from('shop_reminders')
+            .insert([
+                {
+                    shop_id: shopId,
+                    message: message,
+                    reminder_type: reminderType,
+                    sent_by: currentUser.email
+                }
+            ]);
+        
+        if (error) throw error;
+        
+        alert('Reminder sent successfully!');
+        document.getElementById('reminder-message').value = '';
+        
+    } catch (error) {
+        console.error("Error sending reminder:", error);
+        alert('Error sending reminder: ' + error.message);
+    }
+}
+
+async function loadShopNotifications() {
+    if (!currentShop) return;
+    
+    try {
+        const { data: notifications, error } = await supabase
+            .from('shop_reminders')
+            .select('*')
+            .eq('shop_id', currentShop.id)
+            .order('sent_at', { ascending: false });
+        
+        if (error) throw error;
+        
+        const notificationsList = document.getElementById('shop-notifications-list');
+        const unreadCount = notifications ? notifications.filter(n => !n.is_read).length : 0;
+        
+        const notificationBadge = document.getElementById('shop-notification-count');
+        if (notificationBadge) {
+            if (unreadCount > 0) {
+                notificationBadge.textContent = unreadCount;
+                notificationBadge.style.display = 'flex';
+            } else {
+                notificationBadge.style.display = 'none';
+            }
+        }
+        
+        if (!notifications || notifications.length === 0) {
+            notificationsList.innerHTML = `
+                <div class="empty-state">
+                    <i class="fas fa-bell-slash"></i>
+                    <p>No notifications yet</p>
+                    <p><small>You'll see reminders from Developer Admin here</small></p>
+                </div>
+            `;
+            return;
+        }
+        
+        notificationsList.innerHTML = notifications.map(notification => `
+            <div class="reminder-item ${!notification.is_read ? 'unread' : ''}">
+                <div class="reminder-message">${notification.message}</div>
+                <div class="reminder-meta">
+                    <div>
+                        <strong>From:</strong> Fasfood | 
+                        <strong>Type:</strong> <span class="reminder-type">${notification.reminder_type}</span> | 
+                        <strong>Sent:</strong> ${new Date(notification.sent_at).toLocaleString()}
+                    </div>
+                    <div>
+                        ${notification.is_read ? 
+                            `<span style="color: var(--accent);">Read</span>` : 
+                            `<button class="btn-secondary btn-small" onclick="markReminderAsRead(${notification.id})">Mark as Read</button>`
+                        }
+                    </div>
+                </div>
+            </div>
+        `).join('');
+        
+    } catch (error) {
+        console.error("Error loading notifications:", error);
+        const notificationsList = document.getElementById('shop-notifications-list');
+        notificationsList.innerHTML = `
+            <div class="empty-state">
+                <i class="fas fa-exclamation-triangle"></i>
+                <p>Error loading notifications</p>
+            </div>
+        `;
+    }
+}
+
+async function loadShopPayments() {
+    if (!currentShop) return;
+
+    const statusBadge =
+        document.getElementById('subscription-status-badge');
+
+    const nextPaymentElement =
+        document.getElementById('subscription-next-payment');
+
+    const paidUntilElement =
+        document.getElementById('subscription-paid-until');
+
+    const planElement =
+        document.getElementById('subscription-plan');
+
+    const offlineWarning =
+        document.getElementById('subscription-offline-warning');
+
+    const paymentHistory =
+        document.getElementById('shop-payment-history');
+
+    const payButton =
+        document.getElementById('pay-shop-subscription-btn');
+
+        if (payButton) {
+
+    payButton.onclick =
+        startShopSubscriptionPayment;
+}
+
+    if (planElement) {
+        planElement.textContent =
+            currentShop.plan === 'paid'
+                ? 'Paid'
+                : 'Free';
+    }
+
+
+    const status =
+        currentShop.subscription_status || 'free';
+
+
+    const statusConfig = {
+        active: {
+            label: 'Paid / Active',
+            background: '#d4edda',
+            color: '#155724'
+        },
+
+        due: {
+            label: 'Payment Due',
+            background: '#fff3cd',
+            color: '#856404'
+        },
+
+        overdue: {
+            label: 'Overdue',
+            background: '#ffe5d0',
+            color: '#b45309'
+        },
+
+        offline: {
+            label: 'Offline',
+            background: '#f8d7da',
+            color: '#721c24'
+        },
+
+        free: {
+            label: 'Free',
+            background: '#e9ecef',
+            color: '#495057'
+        }
+    };
+
+
+    const selectedStatus =
+        statusConfig[status] || statusConfig.free;
+
+
+    if (statusBadge) {
+        statusBadge.textContent =
+            selectedStatus.label;
+
+        statusBadge.style.background =
+            selectedStatus.background;
+
+        statusBadge.style.color =
+            selectedStatus.color;
+    }
+
+
+    if (offlineWarning) {
+        offlineWarning.style.display =
+            status === 'offline'
+                ? 'block'
+                : 'none';
+    }
+
+
+    if (nextPaymentElement) {
+        nextPaymentElement.textContent =
+            formatSubscriptionDate(
+                currentShop.next_billing_date
+            );
+    }
+
+
+    if (paidUntilElement) {
+        paidUntilElement.textContent =
+            formatSubscriptionDate(
+                currentShop.paid_until
+            );
+    }
+
+
+    if (payButton) {
+        payButton.disabled = false;
+
+        if (status === 'active') {
+            payButton.innerHTML = `
+                <i class="fas fa-lock"></i>
+                Pay Next R99 Subscription
+            `;
+        } else {
+            payButton.innerHTML = `
+                <i class="fas fa-lock"></i>
+                Pay R99 with Ozow
+            `;
+        }
+    }
+
+
+    try {
+
+        const {
+            data: payments,
+            error
+        } = await supabase
+            .from('shop_subscription_payments')
+            .select('*')
+            .eq('shop_id', currentShop.id)
+            .order('created_at', {
+                ascending: false
+            });
+
+
+        if (error) {
+            throw error;
+        }
+
+
+        if (!paymentHistory) {
+            return;
+        }
+
+
+        if (!payments || payments.length === 0) {
+
+            paymentHistory.innerHTML = `
+                <div class="empty-state">
+                    <i class="fas fa-receipt"></i>
+                    <p>No subscription payments yet</p>
+                </div>
+            `;
+
+            return;
+        }
+
+
+        paymentHistory.innerHTML =
+            payments.map(payment => {
+
+                const paymentStatus =
+                    String(
+                        payment.status || 'pending'
+                    ).toLowerCase();
+
+
+                const paid =
+                    paymentStatus === 'paid';
+
+
+                return `
+                    <div style="
+                        padding: 16px 0;
+                        border-bottom: 1px solid #eee;
+                        display: flex;
+                        justify-content: space-between;
+                        gap: 15px;
+                        align-items: center;
+                        flex-wrap: wrap;
+                    ">
+
+                        <div>
+
+                            <strong>
+                                ${formatBillingMonth(
+                                    payment.billing_month
+                                )}
+                            </strong>
+
+                            <div style="
+                                color: #777;
+                                font-size: 0.8rem;
+                                margin-top: 4px;
+                            ">
+                                ${
+                                    payment.transaction_reference ||
+                                    payment.payment_reference ||
+                                    'Subscription payment'
+                                }
+                            </div>
+
+                            ${
+                                payment.invoice_number
+                                    ? `
+                                        <div style="
+                                            color: #888;
+                                            font-size: 0.75rem;
+                                            margin-top: 3px;
+                                        ">
+                                            Invoice:
+                                            ${payment.invoice_number}
+                                        </div>
+                                      `
+                                    : ''
+                            }
+
+                        </div>
+
+
+                        <div style="text-align: right;">
+
+                            <strong style="
+                                display: block;
+                                margin-bottom: 5px;
+                            ">
+                                R${Number(
+                                    payment.amount || 99
+                                ).toFixed(2)}
+                            </strong>
+
+                            <span style="
+                                font-size: 0.75rem;
+                                font-weight: 700;
+                                text-transform: uppercase;
+                                color:
+                                    ${
+                                        paid
+                                            ? '#28a745'
+                                            : '#856404'
+                                    };
+                            ">
+                                ${paymentStatus}
+                            </span>
+
+                            ${
+                                paid &&
+                                payment.invoice_number
+                                    ? `
+                                        <div style="margin-top: 8px;">
+                                            <button
+                                                class="btn-secondary btn-small"
+                                                onclick="downloadShopInvoice(${payment.id})"
+                                            >
+                                                <i class="fas fa-download"></i>
+                                                Invoice
+                                            </button>
+                                        </div>
+                                      `
+                                    : ''
+                            }
+
+                        </div>
+
+                    </div>
+                `;
+
+            }).join('');
+
+    } catch (error) {
+
+        console.error(
+            'Error loading shop payments:',
+            error
+        );
+
+
+        if (paymentHistory) {
+
+            paymentHistory.innerHTML = `
+                <div class="empty-state">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <p>Unable to load payment history</p>
+                </div>
+            `;
+        }
+    }
+}
+
+function formatSubscriptionDate(dateValue) {
+    if (!dateValue) {
+        return '-';
+    }
+
+    const date = new Date(
+        `${dateValue}T00:00:00`
+    );
+
+    return date.toLocaleDateString(
+        'en-ZA',
+        {
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric'
+        }
+    );
+}
+
+async function startShopSubscriptionPayment() {
+
+    if (!currentShop) {
+        alert('Shop information is unavailable.');
+        return;
+    }
+
+    if (currentShop.plan !== 'paid') {
+        alert('This shop is currently on the Free plan.');
+        return;
+    }
+
+    const button =
+        document.getElementById(
+            'pay-shop-subscription-btn'
+        );
+
+    const originalHTML =
+        button?.innerHTML || '';
+
+    try {
+
+        if (button) {
+            button.disabled = true;
+
+            button.innerHTML = `
+                <i class="fas fa-spinner fa-spin"></i>
+                Preparing Ozow...
+            `;
+        }
+
+
+        const {
+            data: {
+                session
+            }
+        } =
+            await supabase.auth
+                .getSession();
+
+
+        if (!session?.access_token) {
+            throw new Error(
+                'Your login session has expired. Please login again.'
+            );
+        }
+
+
+        const response =
+            await fetch(
+                `${supabaseUrl}/functions/v1/create-shop-subscription-payment`,
+                {
+                    method: 'POST',
+
+                    headers: {
+                        'Content-Type':
+                            'application/json',
+
+                        'Authorization':
+                            `Bearer ${session.access_token}`
+                    },
+
+                    body: JSON.stringify({
+                        shopId:
+                            currentShop.id
+                    })
+                }
+            );
+
+
+        const result =
+            await response.json();
+
+
+        if (
+            !response.ok ||
+            !result.success
+        ) {
+            throw new Error(
+                result.error ||
+                'Unable to start Ozow payment.'
+            );
+        }
+
+
+        if (
+            !result.paymentUrl ||
+            !result.params
+        ) {
+            throw new Error(
+                'Ozow payment information is incomplete.'
+            );
+        }
+
+
+        // ==================================
+        // BUILD OZOW POST FORM
+        // ==================================
+
+        const form =
+            document.createElement('form');
+
+        form.method = 'POST';
+
+        form.action =
+            result.paymentUrl;
+
+        form.style.display =
+            'none';
+
+
+        Object.entries(
+            result.params
+        ).forEach(
+            ([name, value]) => {
+
+                const input =
+                    document.createElement(
+                        'input'
+                    );
+
+                input.type =
+                    'hidden';
+
+                input.name =
+                    name;
+
+                input.value =
+                    value == null
+                        ? ''
+                        : String(value);
+
+                form.appendChild(
+                    input
+                );
+            }
+        );
+
+
+        document.body.appendChild(
+            form
+        );
+
+
+        // Browser now goes to Ozow
+        form.submit();
+
+
+    } catch (error) {
+
+        console.error(
+            'Shop subscription payment error:',
+            error
+        );
+
+
+        alert(
+            error.message ||
+            'Unable to start payment.'
+        );
+
+
+        if (button) {
+            button.disabled = false;
+
+            button.innerHTML =
+                originalHTML;
+        }
+    }
+}
+
+function formatBillingMonth(dateValue) {
+    if (!dateValue) {
+        return 'Subscription';
+    }
+
+    const date = new Date(
+        `${dateValue}T00:00:00`
+    );
+
+    return date.toLocaleDateString(
+        'en-ZA',
+        {
+            month: 'long',
+            year: 'numeric'
+        }
+    );
+}
+
+async function cleanupOldNotifications() {
+    try {
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        
+        const { error } = await supabase
+            .from('shop_reminders')
+            .delete()
+            .lt('sent_at', thirtyDaysAgo.toISOString());
+        
+        if (error) {
+            console.error("Error cleaning up old notifications:", error);
+        } else {
+            console.log("Cleaned up old notifications (older than 30 days)");
+        }
+    } catch (error) {
+        console.error("Error in cleanupOldNotifications:", error);
+    }
+}
+
+async function markReminderAsRead(reminderId) {
+    try {
+        const { error } = await supabase
+            .from('shop_reminders')
+            .update({
+                is_read: true,
+                read_at: new Date().toISOString()
+            })
+            .eq('id', reminderId);
+        
+        if (error) throw error;
+        
+        await loadShopNotifications();
+        
+    } catch (error) {
+        console.error("Error marking reminder as read:", error);
+    }
+}
+
+window.markReminderAsRead = markReminderAsRead;
+
+function populateReminderShopSelect() {
+    const shopSelect = document.getElementById('reminder-shop-select');
+    if (!shopSelect) return;
+    
+    shopSelect.innerHTML = '<option value="">Select a shop</option>';
+    
+    if (allShops && allShops.length > 0) {
+        allShops.forEach(shop => {
+            const option = document.createElement('option');
+            option.value = shop.id;
+            option.textContent = shop.name;
+            shopSelect.appendChild(option);
+        });
+    }
+}
+
+
+function isShopOpen(workingHours, temporaryClosed) {
+    if (temporaryClosed) {
+        return false;
+    }
+    
+    if (!workingHours) return true;
+    
+    const now = new Date();
+    const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+    const today = dayNames[now.getDay()];
+    const currentTime = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
+    
+    const todaySchedule = workingHours[today];
+    
+    if (todaySchedule.closed) {
+        return false;
+    }
+    
+    return currentTime >= todaySchedule.open && currentTime <= todaySchedule.close;
+}
+
+function getShopStatus(workingHours, temporaryClosed) {
+    if (temporaryClosed) {
+        return { 
+            status: 'temporary_closed', 
+            message: 'Temporarily Closed'
+        };
+    }
+    
+    if (!workingHours) return { 
+        status: 'open', 
+        message: 'Open'
+    };
+    
+    const now = new Date();
+    const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+    const today = dayNames[now.getDay()];
+    const todaySchedule = workingHours[today];
+    
+    if (todaySchedule.closed) {
+        return { 
+            status: 'closed', 
+            message: 'Closed today'
+        };
+    }
+    
+    const currentTime = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
+    
+    if (currentTime < todaySchedule.open) {
+        return { 
+            status: 'closed', 
+            message: `Opens at ${todaySchedule.open}`
+        };
+    }
+    
+    if (currentTime > todaySchedule.close) {
+        return { 
+            status: 'closed', 
+            message: 'Closed for today'
+        };
+    }
+    
+    return { 
+        status: 'open', 
+        message: `Open - Closes at ${todaySchedule.close}`
+    };
+}
+
+function loadWorkingHoursForm() {
+    const defaultHours = {
+        monday: { open: '09:00', close: '19:00', closed: false },
+        tuesday: { open: '09:00', close: '19:00', closed: false },
+        wednesday: { open: '09:00', close: '19:00', closed: false },
+        thursday: { open: '09:00', close: '19:00', closed: false },
+        friday: { open: '09:00', close: '19:00', closed: false },
+        saturday: { open: '09:00', close: '19:00', closed: false },
+        sunday: { open: '09:00', close: '19:00', closed: false }
+    };
+    
+    const workingHours = currentShop.working_hours || defaultHours;
+    const temporaryClosed = currentShop.temporary_closed || false;
+    
+    return `
+        <div class="temporary-closed-section">
+            <div class="temporary-closed-toggle">
+                <input type="checkbox" id="temporary-closed-toggle" ${temporaryClosed ? 'checked' : ''}>
+                <label class="toggle-label" for="temporary-closed-toggle">Temporarily Closed</label>
+            </div>
+            <p class="toggle-description">
+                Enable this to temporarily close your shop. Customers will see a "Temporarily Closed" message.
+                Use this for maintenance, stock issues, or other temporary closures.
+            </p>
+        </div>
+        
+        <div class="working-hours-container" id="working-hours-container">
+            <h4>Working Hours</h4>
+            <p>Set your shop's operating hours. Customers will see a "We're closed" message outside these hours.</p>
+            
+            ${['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map(day => `
+                <div class="day-schedule">
+                    <div class="day-label">${day.charAt(0).toUpperCase() + day.slice(1)}</div>
+                    <div class="time-inputs">
+                        <input type="time" class="time-input" id="${day}-open" value="${workingHours[day].open}">
+                        <span>to</span>
+                        <input type="time" class="time-input" id="${day}-close" value="${workingHours[day].close}">
+                    </div>
+                    <label class="closed-label">
+                        <input type="checkbox" class="closed-checkbox" id="${day}-closed" ${workingHours[day].closed ? 'checked' : ''}>
+                        Closed
+                    </label>
+                </div>
+            `).join('')}
+        </div>
+        
+        <button class="btn-primary" id="save-working-hours-btn" style="margin-top: 20px;">
+            Save Working Hours & Settings
+        </button>
+    `;
+}
+
+async function saveWorkingHours() {
+    if (!currentShop) {
+        showToast('No shop selected', 'error');
+        return;
+    }
+    
+    const workingHours = {};
+    const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+    
+    let hasErrors = false;
+    
+    days.forEach(day => {
+        const openTime = document.getElementById(`${day}-open`);
+        const closeTime = document.getElementById(`${day}-close`);
+        const closedCheckbox = document.getElementById(`${day}-closed`);
+        
+        if (!openTime || !closeTime || !closedCheckbox) {
+            console.error(`Missing elements for day: ${day}`);
+            hasErrors = true;
+            return;
+        }
+        
+        const open = openTime.value;
+        const close = closeTime.value;
+        const closed = closedCheckbox.checked;
+        
+        if (!closed && (!open || !close)) {
+            showToast(`Please set times for ${day} or mark as closed`, 'error');
+            hasErrors = true;
+            return;
+        }
+        
+        if (!closed && open >= close) {
+            showToast(`Opening time must be before closing time for ${day}`, 'error');
+            hasErrors = true;
+            return;
+        }
+        
+        workingHours[day] = {
+            open: closed ? "09:00" : open, 
+            close: closed ? "19:00" : close,
+            closed: closed
+        };
+    });
+    
+    if (hasErrors) return;
+    
+    const temporaryClosed = document.getElementById('temporary-closed-toggle')?.checked || false;
+    
+    try {
+        const btn = document.getElementById('save-working-hours-btn');
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+        btn.disabled = true;
+        
+        const { error } = await supabase
+            .from('shops')
+            .update({ 
+                working_hours: workingHours,
+                temporary_closed: temporaryClosed
+            })
+            .eq('id', currentShop.id);
+        
+        if (error) throw error;
+        
+        currentShop.working_hours = workingHours;
+        currentShop.temporary_closed = temporaryClosed;
+        
+        showToast('Working hours and settings saved successfully!');
+        
+        if (document.getElementById('shop-dashboard')) {
+            await loadShopStats();
+        }
+        
+    } catch (error) {
+        console.error("Error saving working hours:", error);
+        showToast('Error saving working hours: ' + error.message, 'error');
+    } finally {
+        const btn = document.getElementById('save-working-hours-btn');
+        if (btn) {
+            btn.innerHTML = '<i class="fas fa-save"></i> Save Working Hours & Settings';
+            btn.disabled = false;
+        }
+    }
+}
+
+function showTemporarilyClosedMessage() {
+    setHeaderVisibility(true);
+    if (currentShop) {
+        updateHeaderText(currentShop);
+    }
+    
+    const mainContent = document.getElementById('main-content');
+    mainContent.innerHTML = `
+        <style>
+            .temp-closed-container {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                min-height: calc(100vh - 140px);
+                padding: 20px;
+                margin-top: 40px;
+                animation: fadeInTemp 0.5s ease;
+            }
+            
+            @keyframes fadeInTemp {
+                from { opacity: 0; transform: translateY(20px); }
+                to { opacity: 1; transform: translateY(0); }
+            }
+            
+            .temp-closed-card {
+                background: white;
+                border-radius: 32px;
+                padding: 40px 32px;
+                max-width: 400px;
+                width: 100%;
+                text-align: center;
+                border: 1px solid #f0f0f0;
+                box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+                position: relative;
+                overflow: hidden;
+            }
+            
+            .temp-closed-card::before {
+                content: '';
+                position: absolute;
+                top: 0;
+                left: 0;
+                right: 0;
+                height: 6px;
+                background: linear-gradient(90deg, #ffa726, #ff9800, #fb8c00, #f57c00);
+            }
+            
+            .temp-closed-icon {
+                width: 100px;
+                height: 100px;
+                background: linear-gradient(135deg, #fff3e0, #ffe8d4);
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                margin: 0 auto 24px;
+            }
+            
+            .temp-closed-icon i {
+                font-size: 48px;
+                color: #ff9800;
+            }
+            
+            .temp-closed-card h2 {
+                font-size: 28px;
+                font-weight: 800;
+                margin: 0 0 12px;
+                background: linear-gradient(135deg, #ff9800, #f57c00);
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+                background-clip: text;
+            }
+            
+            .temp-closed-card p {
+                color: #64748b;
+                font-size: 15px;
+                line-height: 1.5;
+                margin: 0 0 8px;
+            }
+            
+            .shop-details {
+                background: #f8fafc;
+                border-radius: 20px;
+                padding: 20px;
+                margin: 24px 0;
+                text-align: left;
+            }
+            
+            .shop-detail-item {
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                margin-bottom: 16px;
+            }
+            
+            .shop-detail-item:last-child {
+                margin-bottom: 0;
+            }
+            
+            .shop-detail-icon {
+                width: 40px;
+                height: 40px;
+                background: white;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+            }
+            
+            .shop-detail-icon i {
+                font-size: 18px;
+                color: var(--primary);
+            }
+            
+            .shop-detail-content {
+                flex: 1;
+            }
+            
+            .shop-detail-label {
+                font-size: 11px;
+                color: #94a3b8;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+                margin-bottom: 2px;
+            }
+            
+            .shop-detail-value {
+                font-size: 14px;
+                font-weight: 500;
+                color: #1e293b;
+            }
+            
+            .update-info {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 8px;
+                margin-top: 20px;
+                padding: 12px;
+                background: #f1f5f9;
+                border-radius: 40px;
+                font-size: 12px;
+                color: #64748b;
+            }
+            
+            .update-info i {
+                color: #ff9800;
+            }
+            
+            @media (max-width: 480px) {
+                .temp-closed-card {
+                    padding: 32px 24px;
+                }
+                
+                .temp-closed-icon {
+                    width: 80px;
+                    height: 80px;
+                }
+                
+                .temp-closed-icon i {
+                    font-size: 38px;
+                }
+                
+                .temp-closed-card h2 {
+                    font-size: 24px;
+                }
+            }
+        </style>
+        
+        <div class="temp-closed-container">
+            <div class="temp-closed-card">
+                <div class="temp-closed-icon">
+                    <i class="fas fa-store-slash"></i>
+                </div>
+                
+                <h2>Temporarily Closed</h2>
+                <p style="font-size: 13px;">Restocking or other shop maintenance</p>
+                
+                <div class="shop-details">
+                    <div class="shop-detail-item">
+                        <div class="shop-detail-icon">
+                            <i class="fas fa-store"></i>
+                        </div>
+                        <div class="shop-detail-content">
+                            <div class="shop-detail-label">Shop Name</div>
+                            <div class="shop-detail-value">${escapeHtml(currentShop.name)}</div>
+                        </div>
+                    </div>
+                    
+                    ${currentShop.phone_number ? `
+                        <div class="shop-detail-item">
+                            <div class="shop-detail-icon">
+                                <i class="fas fa-phone-alt"></i>
+                            </div>
+                            <div class="shop-detail-content">
+                                <div class="shop-detail-label">Contact</div>
+                                <div class="shop-detail-value">${escapeHtml(currentShop.phone_number)}</div>
+                            </div>
+                        </div>
+                    ` : ''}
+                    
+                    ${currentShop.address ? `
+                        <div class="shop-detail-item">
+                            <div class="shop-detail-icon">
+                                <i class="fas fa-map-marker-alt"></i>
+                            </div>
+                            <div class="shop-detail-content">
+                                <div class="shop-detail-label">Address</div>
+                                <div class="shop-detail-value">${escapeHtml(currentShop.address)}</div>
+                            </div>
+                        </div>
+                    ` : ''}
+                </div>
+                
+                <div class="update-info">
+                    <i class="fas fa-clock"></i>
+                    <span>Last updated: ${new Date().toLocaleDateString('en-ZA', { 
+                        day: 'numeric', 
+                        month: 'short', 
+                        hour: '2-digit', 
+                        minute: '2-digit' 
+                    })}</span>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.getElementById('bottom-nav').style.display = 'flex';
+}
+
+function showShopClosedMessage() {
+    setHeaderVisibility(true);
+    if (currentShop) {
+        updateHeaderText(currentShop);
+    }
+    
+    const shopStatus = getShopStatus(currentShop.working_hours, currentShop.temporary_closed);
+    const workingHours = currentShop.working_hours;
+    
+    const mainContent = document.getElementById('main-content');
+    mainContent.innerHTML = `
+        <style>
+            .closed-container {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                min-height: calc(100vh - 140px);
+                padding: 20px;
+                margin-top: 20px;
+                animation: fadeInClosed 0.5s ease;
+            }
+            
+            @keyframes fadeInClosed {
+                from { opacity: 0; transform: translateY(20px); }
+                to { opacity: 1; transform: translateY(0); }
+            }
+            
+            .closed-card {
+                background: white;
+                border-radius: 32px;
+                padding: 40px 32px;
+                max-width: 420px;
+                width: 100%;
+                border: 1px solid #f0f0f0;
+                box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+            }
+            
+            .closed-icon {
+                width: 100px;
+                height: 100px;
+                background: linear-gradient(135deg, #fee2e2, #ffebee);
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                margin: 0 auto 24px;
+            }
+            
+            .closed-icon i {
+                font-size: 48px;
+                color: #ef4444;
+            }
+            
+            .closed-card h2 {
+                font-size: 28px;
+                font-weight: 800;
+                margin: 0 0 8px;
+                color: #1e293b;
+                text-align: center;
+            }
+            
+            .closed-subtitle {
+                text-align: center;
+                color: #64748b;
+                font-size: 15px;
+                margin: 0 0 24px;
+            }
+            
+            .hours-card {
+                background: #f8fafc;
+                border-radius: 24px;
+                padding: 20px;
+                margin-bottom: 24px;
+            }
+            
+            .hours-header {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                margin-bottom: 16px;
+                padding-bottom: 12px;
+                border-bottom: 1px solid #e2e8f0;
+            }
+            
+            .hours-header i {
+                font-size: 20px;
+                color: var(--primary);
+            }
+            
+            .hours-header h3 {
+                margin: 0;
+                font-size: 16px;
+                font-weight: 600;
+                color: #1e293b;
+            }
+            
+            .hours-list {
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
+            }
+            
+            .hour-row {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding: 6px 0;
+            }
+            
+            .day-name {
+                font-weight: 500;
+                color: #334155;
+                font-size: 14px;
+                text-transform: capitalize;
+            }
+            
+            .day-hours {
+                font-size: 13px;
+                color: #64748b;
+            }
+            
+            .day-hours.closed {
+                color: #ef4444;
+                font-weight: 500;
+            }
+            
+            .today-info {
+                background: #fff3e0;
+                border-radius: 16px;
+                padding: 14px 16px;
+                margin-top: 16px;
+                display: flex;
+                align-items: center;
+                gap: 12px;
+            }
+            
+            .today-info i {
+                font-size: 20px;
+                color: #ff9800;
+            }
+            
+            .today-info p {
+                margin: 0;
+                font-size: 13px;
+                color: #b85c1a;
+                flex: 1;
+            }
+            
+            .back-soon {
+                text-align: center;
+                padding: 16px;
+                background: #f1f5f9;
+                border-radius: 40px;
+                margin-top: 8px;
+            }
+            
+            .back-soon p {
+                margin: 0;
+                font-size: 13px;
+                color: #475569;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 8px;
+            }
+            
+            .back-soon i {
+                color: #ff9800;
+            }
+            
+            @media (max-width: 480px) {
+                .closed-card {
+                    padding: 32px 24px;
+                }
+                
+                .closed-icon {
+                    width: 80px;
+                    height: 80px;
+                }
+                
+                .closed-icon i {
+                    font-size: 38px;
+                }
+                
+                .closed-card h2 {
+                    font-size: 24px;
+                }
+            }
+        </style>
+        
+        <div class="closed-container">
+            <div class="closed-card">
+                <div class="closed-icon">
+                    <i class="fas fa-store-slash"></i>
+                </div>
+                
+                
+                <p class="closed-subtitle">${shopStatus.message}</p>
+                
+                <div class="hours-card">
+                    <div class="hours-header">
+                        <i class="fas fa-clock"></i>
+                        <h3>Business Hours</h3>
+                    </div>
+                    <div class="hours-list">
+                        ${workingHours ? Object.entries(workingHours).map(([day, schedule]) => {
+                            const dayNames = {
+                                monday: 'Monday', tuesday: 'Tuesday', wednesday: 'Wednesday',
+                                thursday: 'Thursday', friday: 'Friday', saturday: 'Saturday', sunday: 'Sunday'
+                            };
+                            const isToday = day === getCurrentDay();
+                            return `
+                                <div class="hour-row" style="${isToday ? 'background: rgba(255, 123, 49, 0.05); border-radius: 12px; margin: -4px 0; padding: 8px 12px;' : ''}">
+                                    <span class="day-name">${dayNames[day]} ${isToday ? '(Today)' : ''}</span>
+                                    <span class="day-hours ${schedule.closed ? 'closed' : ''}">
+                                        ${schedule.closed ? 'Closed' : `${schedule.open} - ${schedule.close}`}
+                                    </span>
+                                </div>
+                            `;
+                        }).join('') : '<div class="hour-row"><span>Hours not set</span></div>'}
+                    </div>
+                    
+                    <div class="today-info">
+                        <i class="fas fa-info-circle"></i>
+                        <p>Please visit us during our business hours</p>
+                    </div>
+                </div>
+                
+                
+            </div>
+        </div>
+    `;
+    
+    document.getElementById('bottom-nav').style.display = 'flex';
+}
+
+function getCurrentDay() {
+    const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+    return days[new Date().getDay()];
+}
+
+
+let cart = [];
+
+function setupAddToCartListeners() {
+    document.addEventListener('click', function(e) {
+
+        const addButton = e.target.closest('.btn-add');
+        if (addButton) {
+            const foodCard = addButton.closest('.food-card');
+            if (foodCard) {
+                const itemId = foodCard.getAttribute('data-item-id');
+                console.log('Add to cart clicked, itemId:', itemId);
+                
+                if (itemId && itemId !== "null" && itemId !== "undefined") {
+                    addToCart(parseInt(itemId));
+                } else {
+                    console.error('Invalid item ID from food card:', itemId);
+                    showToast('Error: Could not add item to cart', 'error');
+                }
+            }
+        }
+    });
+}
+
+async function addToCart(itemId) {
+    if (!currentShop) {
+        console.error('No current shop selected');
+        showToast('Please select a shop first', 'error');
+        return;
+    }
+    
+    if (!itemId || itemId === "null" || itemId === "undefined") {
+        console.error('Invalid item ID:', itemId);
+        showToast('Error adding item to cart', 'error');
+        return;
+    }
+    
+    console.log('Adding to cart, itemId:', itemId, 'shopId:', currentShop.id);
+    
+    try {
+        const { data: menuItem, error } = await supabase
+            .from('menu_items')
+            .select('*, menu_item_addons(*)')
+            .eq('id', itemId)
+            .eq('shop_id', currentShop.id)
+            .single();
+        
+        if (error) {
+            console.error('Supabase error:', error);
+            throw error;
+        }
+        
+        if (!menuItem) {
+            throw new Error('Menu item not found');
+        }
+        
+        console.log('Found menu item:', menuItem);
+        
+        const existingItemIndex = cart.findIndex(item => item.id === menuItem.id);
+        
+        if (existingItemIndex > -1) {
+            cart[existingItemIndex].quantity += 1;
+            console.log('Increased quantity for existing item:', cart[existingItemIndex]);
+        } else {
+            const cartItem = {
+                id: menuItem.id,
+                name: menuItem.name,
+                description: menuItem.description,
+                price: parseFloat(menuItem.price),
+                quantity: 1,
+                image_url: menuItem.image_url,
+                category: menuItem.category,
+                badge: menuItem.badge,
+                rating: menuItem.rating,
+                addons: menuItem.menu_item_addons || [],
+                selectedAddons: []
+            };
+            
+            cart.push(cartItem);
+            console.log('Added new item to cart:', cartItem);
+        }
+        
+        updateCartIcon();
+        showToast(`${menuItem.name} added to cart!`);
+        
+    } catch (error) {
+        console.error("Error adding to cart:", error);
+        showToast('Error adding item to cart', 'error');
+    }
+}
+
+function updateCartIcon() {
+    const cartIcon = document.getElementById('cart-icon');
+    const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
+    
+    const existingBadge = cartIcon.querySelector('.cart-badge');
+    if (existingBadge) {
+        existingBadge.remove();
+    }
+    
+    if (totalItems > 0) {
+        const badge = document.createElement('span');
+        badge.className = 'notification-badge cart-badge';
+        badge.textContent = totalItems > 99 ? '99+' : totalItems.toString();
+        badge.style.position = 'absolute';
+        badge.style.top = '-5px';
+        badge.style.right = '-5px';
+        cartIcon.style.position = 'relative';
+        cartIcon.appendChild(badge);
+    }
+}
+
+let cartBottomSheet = null;
+
+function showCartPage() {
+    if (!currentUser || !currentShop) return;
+    
+    if (!cartBottomSheet) {
+        createCartBottomSheet();
+    }
+    
+    updateCartContent();
+    
+    cartBottomSheet.classList.add('active');
+    document.body.style.overflow = 'hidden';
+}
+
+function createCartBottomSheet() {
+    const cartSheet = document.createElement('div');
+    cartSheet.className = 'cart-container';
+    cartSheet.id = 'cart-bottom-sheet';
+    cartSheet.innerHTML = `
+        <div class="cart-bottom-sheet">
+            <div class="cart-drag-handle">
+                <div class="drag-bar"></div>
+            </div>
+            <div class="cart-header">
+                <h2>Your Cart</h2>
+                <button class="close-cart">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="cart-items-container" id="cart-items-container">
+                <!-- contents -->
+            </div>
+            <div class="cart-footer" id="cart-footer" style="display: none;">
+                <div class="cart-total">
+                    <span class="cart-total-label">Total Amount</span>
+                    <span class="cart-total-amount" id="cart-total-amount">R0.00</span>
+                </div>
+                <button class="checkout-btn" id="checkout-btn-sheet">
+                    <i class="fas fa-arrow-right"></i>
+                    Proceed to Checkout
+                </button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(cartSheet);
+    cartBottomSheet = cartSheet;
+    
+    cartSheet.addEventListener('click', function(e) {
+        if (e.target === cartSheet) {
+            closeCartSheet();
+        }
+    });
+    
+    cartSheet.querySelector('.close-cart').addEventListener('click', closeCartSheet);
+    
+    let startY = 0;
+    let currentY = 0;
+    const sheet = cartSheet.querySelector('.cart-bottom-sheet');
+    
+    sheet.addEventListener('touchstart', (e) => {
+        startY = e.touches[0].clientY;
+    });
+    
+    sheet.addEventListener('touchmove', (e) => {
+        currentY = e.touches[0].clientY;
+        const diff = currentY - startY;
+        if (diff > 0) {
+            sheet.style.transform = `translateY(${diff}px)`;
+        }
+    });
+    
+    sheet.addEventListener('touchend', () => {
+        const diff = currentY - startY;
+        if (diff > 100) {
+            closeCartSheet();
+        }
+        sheet.style.transform = '';
+        startY = 0;
+        currentY = 0;
+    });
+}
+
+function closeCartSheet() {
+    if (cartBottomSheet) {
+        cartBottomSheet.classList.remove('active');
+        document.body.style.overflow = '';
+    }
+}
+
+function updateCartContent() {
+    const container = document.getElementById('cart-items-container');
+    const footer = document.getElementById('cart-footer');
+    
+    if (!container) return;
+    
+    if (!cart || cart.length === 0) {
+        container.innerHTML = `
+            <div class="empty-cart">
+                <div class="empty-cart-icon">
+                    <i class="fas fa-shopping-cart"></i>
+                </div>
+                <h3>Your cart is empty</h3>
+                <p>Looks like you haven't added anything yet</p>
+                <button class="continue-shopping-btn" id="continue-shopping-empty">
+                    <i class="fas fa-utensils"></i>
+                    Continue Shopping
+                </button>
+            </div>
+        `;
+        footer.style.display = 'none';
+        
+        const continueBtn = document.getElementById('continue-shopping-empty');
+        if (continueBtn) {
+            continueBtn.addEventListener('click', () => {
+                closeCartSheet();
+            });
+        }
+        return;
+    }
+    
+    const totalAmount = cart.reduce((sum, item) => sum + (parseFloat(item.price) * item.quantity), 0);
+    
+    container.innerHTML = cart.map((item, index) => `
+        <div class="cart-item-card" data-index="${index}">
+            <div class="cart-item-info">
+                <div class="cart-item-image">
+                    ${item.image_url ? 
+                        `<img src="${item.image_url}" alt="${item.name}" onerror="this.parentElement.innerHTML='<i class=\'fas fa-utensils\'></i>'">` :
+                        `<i class="fas fa-utensils"></i>`
+                    }
+                </div>
+                <div class="cart-item-details">
+                    <div class="cart-item-name">${escapeHtml(item.name)}</div>
+                    <div class="cart-item-price">R${parseFloat(item.price).toFixed(2)}</div>
+                    ${item.selectedAddons && item.selectedAddons.length > 0 ? `
+                        <div class="cart-item-addons">
+                            ${item.selectedAddons.map(addon => escapeHtml(addon.name)).join(', ')}
+                        </div>
+                    ` : ''}
+                </div>
+            </div>
+            <div class="cart-item-actions">
+                <div class="quantity-controls">
+                    <button class="qty-btn qty-decrease" data-index="${index}">-</button>
+                    <span class="qty-value">${item.quantity}</span>
+                    <button class="qty-btn qty-increase" data-index="${index}">+</button>
+                </div>
+                <button class="remove-item-btn" data-index="${index}">
+                    <i class="fas fa-trash-alt"></i>
+                </button>
+            </div>
+        </div>
+    `).join('');
+    
+    footer.style.display = 'block';
+    document.getElementById('cart-total-amount').textContent = `R${totalAmount.toFixed(2)}`;
+    
+    container.querySelectorAll('.qty-decrease').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const index = parseInt(btn.getAttribute('data-index'));
+            updateCartQuantitySheet(index, 'decrease');
+        });
+    });
+    
+    container.querySelectorAll('.qty-increase').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const index = parseInt(btn.getAttribute('data-index'));
+            updateCartQuantitySheet(index, 'increase');
+        });
+    });
+    
+    container.querySelectorAll('.remove-item-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const index = parseInt(btn.getAttribute('data-index'));
+            removeFromCartSheet(index);
+        });
+    });
+    
+    const checkoutBtn = document.getElementById('checkout-btn-sheet');
+    if (checkoutBtn) {
+        checkoutBtn.onclick = () => {
+            closeCartSheet();
+            showCheckoutPage();
+        };
+    }
+}
+
+function updateCartQuantitySheet(index, action) {
+    if (action === 'increase') {
+        cart[index].quantity += 1;
+    } else if (action === 'decrease') {
+        if (cart[index].quantity > 1) {
+            cart[index].quantity -= 1;
+        } else {
+            removeFromCartSheet(index);
+            return;
+        }
+    }
+    
+    updateCartIcon();
+    updateCartContent();
+}
+
+function removeFromCartSheet(index) {
+    cart.splice(index, 1);
+    updateCartIcon();
+    updateCartContent();
+}
+
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function updateCartQuantity(index, action) {
+    if (action === 'increase') {
+        cart[index].quantity += 1;
+    } else if (action === 'decrease') {
+        if (cart[index].quantity > 1) {
+            cart[index].quantity -= 1;
+        } else {
+            removeFromCart(index);
+            return;
+        }
+    }
+    
+    updateCartIcon();
+    showCartPage();
+}
+
+function removeFromCart(index) {
+    cart.splice(index, 1);
+    updateCartIcon();
+    
+    if (cart.length === 0) {
+        showCartPage(); 
+    } else {
+        showCartPage();
+    }
+}
+
+async function showCheckoutPage() {
+    if (!currentUser || !currentShop) return;
+    
+    setHeaderVisibility(true);
+    if (currentShop) {
+        updateHeaderText(currentShop);
+    }
+    
+    showLoading('Loading checkout...');
+    
+    try {
+        const { data: profile, error } = await supabase
+            .from('user_profiles')
+            .select('*')
+            .eq('customer_email', currentUser.email)
+            .single();
+        
+        if (error && error.code !== 'PGRST116') {
+            console.error("Error loading profile:", error);
+        }
+        
+        const hasProfile = !!(profile?.full_name && profile?.phone_number && profile?.address);
+        const totalAmount = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+        
+        const mainContent = document.getElementById('main-content');
+        mainContent.innerHTML = `
+            <div class="checkout-container">
+                ${!hasProfile ? `
+                    <div class="profile-alert-card">
+                        <div class="profile-alert-content">
+                            <div class="profile-alert-icon">
+                                <i class="fas fa-user-edit"></i>
+                            </div>
+                            <div class="profile-alert-text">
+                                <h4>Complete Your Profile</h4>
+                                <p>Please add your details for faster checkout</p>
+                            </div>
+                        </div>
+                        <button class="complete-profile-btn" id="complete-profile-btn">
+                            Complete
+                        </button>
+                    </div>
+                ` : ''}
+                
+                <div class="order-summary-card">
+                    <div class="order-summary-header">
+                        <h3>
+                            <i class="fas fa-receipt"></i>
+                            Order Summary
+                        </h3>
+                    </div>
+                    <div class="order-items-list">
+                        ${cart.map(item => `
+                            <div class="order-item-row">
+                                <div>
+                                    <span class="order-item-name">${escapeHtml(item.name)}</span>
+                                    <span class="order-item-quantity">× ${item.quantity}</span>
+                                </div>
+                                <div class="order-item-price">R${(item.price * item.quantity).toFixed(2)}</div>
+                            </div>
+                        `).join('')}
+                    </div>
+                    <div class="order-total-row">
+                        <span class="order-total-label">Total Amount</span>
+                        <span class="order-total-amount">R${totalAmount.toFixed(2)}</span>
+                    </div>
+                </div>
+                
+                ${hasProfile ? `
+                    <div class="profile-card-checkout">
+                        <div class="profile-card-header">
+                            <i class="fas fa-user-circle"></i>
+                            <h4>Delivery Information</h4>
+                        </div>
+                        <div class="profile-info">
+                            <div class="profile-field">
+                                <div class="profile-field-label">Full Name</div>
+                                <div class="profile-field-value">${escapeHtml(profile.full_name)}</div>
+                            </div>
+                            <div class="profile-field">
+                                <div class="profile-field-label">Phone Number</div>
+                                <div class="profile-field-value">${escapeHtml(profile.phone_number)}</div>
+                            </div>
+                            <div class="profile-field">
+                                <div class="profile-field-label">Default Address</div>
+                                <div class="profile-field-value">${escapeHtml(profile.address)}</div>
+                            </div>
+                        </div>
+                    </div>
+                ` : ''}
+                
+                <div class="form-section-card">
+                    <div class="form-section-header">
+                        <i class="fas fa-truck"></i>
+                        <h4>Collection Method</h4>
+                    </div>
+                    <div class="form-section-content">
+                        <select class="form-input" id="collection-method" required style="width: 100%; padding: 12px; border-radius: 12px; border: 1px solid #ddd;">
+                            <option value="">Select method</option>
+                            <option value="pickup">Pickup</option>
+                            ${currentShop.delivery_enabled !== false ? '<option value="delivery">Delivery</option>' : ''}
+                        </select>
+                        
+                        <div id="delivery-options" style="display: none; margin-top: 15px;">
+                            <div class="form-group">
+                                <label class="form-label">Delivery Address *</label>
+                                ${hasProfile ? `
+                                    <div style="margin-bottom: 10px;">
+                                        <label style="display: block; margin-bottom: 5px;">
+                                            <input type="radio" name="delivery-address" value="profile" checked> 
+                                            Use my profile address: ${escapeHtml(profile.address)}
+                                        </label>
+                                        <label style="display: block;">
+                                            <input type="radio" name="delivery-address" value="new"> 
+                                            Enter different address
+                                        </label>
+                                    </div>
+                                    <div id="new-address-input" style="display: none;">
+                                        <textarea class="form-textarea" id="delivery-address" placeholder="Enter your delivery address" rows="3"></textarea>
+                                    </div>
+                                ` : `
+                                    <textarea class="form-textarea" id="delivery-address" placeholder="Enter your delivery address" rows="3" required></textarea>
+                                `}
+                            </div>
+                            <div class="delivery-fee-badge">
+                                <i class="fas fa-map-marker-alt"></i>
+                                Delivery fee: R${currentShop.delivery_charge_within_2km || 10} (within 2km)
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="form-section-card">
+                    <div class="form-section-header">
+                        <i class="fas fa-credit-card"></i>
+                        <h4>Payment Method</h4>
+                    </div>
+                    <div class="form-section-content">
+                        <select class="form-input" id="payment-method" required style="width: 100%; padding: 12px; border-radius: 12px; border: 1px solid #ddd;">
+                            <option value="">Select payment method</option>
+                            <option value="cash">Cash on Collection/Delivery</option>
+                            ${currentShop.card_payment_enabled !== false ? '<option value="bank_card">Bank Card</option>' : ''}
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="form-section-card">
+                    <div class="form-section-header">
+                        <i class="fas fa-clock"></i>
+                        <h4>Order Schedule</h4>
+                    </div>
+                    <div class="form-section-content">
+                        <select class="form-input" id="order-schedule" style="width: 100%; padding: 12px; border-radius: 12px; border: 1px solid #ddd;">
+                            <option value="now">Serve Now</option>
+                            <option value="later">Serve Later</option>
+                        </select>
+                        
+                        <div id="schedule-time" style="display: none; margin-top: 15px;">
+                            <div class="form-group">
+                                <label class="form-label">Schedule Time *</label>
+                                <input type="time" class="form-input" id="scheduled-time" 
+                                       min="${getMinimumScheduledTime()}" 
+                                       style="width: 100%; padding: 12px; border-radius: 12px; border: 1px solid #ddd;">
+                                <small style="color: #666; display: block; margin-top: 5px;">
+                                    Orders can only be scheduled at least 3 hours in advance
+                                </small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="checkout-actions">
+                    <button class="btn-primary" id="checkout-btn" ${!hasProfile ? 'disabled' : ''}>
+                        <i class="fas fa-check-circle"></i>
+                        ${!hasProfile ? 'Complete Profile to Continue' : 'Place Order'}
+                    </button>
+                    <button class="btn-secondary" id="cancel-order-btn">
+                        <i class="fas fa-arrow-left"></i>
+                        Back to Cart
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        const collectionMethod = document.getElementById('collection-method');
+        const deliveryOptions = document.getElementById('delivery-options');
+        
+        if (collectionMethod) {
+            collectionMethod.addEventListener('change', function() {
+                deliveryOptions.style.display = this.value === 'delivery' ? 'block' : 'none';
+                
+                if (this.value === 'delivery' && hasProfile) {
+                    const profileAddressRadio = document.querySelector('input[name="delivery-address"][value="profile"]');
+                    if (profileAddressRadio) {
+                        profileAddressRadio.checked = true;
+                        document.getElementById('new-address-input').style.display = 'none';
+                    }
+                }
+            });
+        }
+        
+        if (hasProfile) {
+            const addressRadios = document.querySelectorAll('input[name="delivery-address"]');
+            addressRadios.forEach(radio => {
+                radio.addEventListener('change', function() {
+                    const newAddressInput = document.getElementById('new-address-input');
+                    newAddressInput.style.display = this.value === 'new' ? 'block' : 'none';
+                    
+                    const addressField = document.getElementById('delivery-address');
+                    if (this.value === 'profile') {
+                        addressField.value = '';
+                        addressField.required = false;
+                    } else {
+                        addressField.required = true;
+                    }
+                });
+            });
+        }
+        
+        const orderSchedule = document.getElementById('order-schedule');
+        const scheduleTime = document.getElementById('schedule-time');
+        
+        if (orderSchedule) {
+            orderSchedule.addEventListener('change', function() {
+                scheduleTime.style.display = this.value === 'later' ? 'block' : 'none';
+                if (this.value === 'later') {
+                    document.getElementById('scheduled-time').min = getMinimumScheduledTime();
+                }
+            });
+        }
+        
+        const completeProfileBtn = document.getElementById('complete-profile-btn');
+        if (completeProfileBtn) {
+            completeProfileBtn.addEventListener('click', () => {
+                closeCartSheet();
+                showUserProfile();
+            });
+        }
+        
+        const checkoutBtn = document.getElementById('checkout-btn');
+        if (checkoutBtn) {
+            checkoutBtn.addEventListener('click', () => {
+                submitOrder(profile, hasProfile);
+            });
+        }
+        
+        const cancelBtn = document.getElementById('cancel-order-btn');
+        if (cancelBtn) {
+            cancelBtn.onclick = () => {
+                showCartPage();
+            };
+        }
+        
+        document.getElementById('bottom-nav').style.display = 'flex';
+        window.scrollTo(0, 0);
+        
+    } catch (error) {
+        console.error("Error loading checkout:", error);
+        showToast('Error loading checkout', 'error');
+    } finally {
+        setTimeout(hideLoading, 300);
+    }
+}
+
+function setupCheckoutEventListeners(profile, hasProfile) {
+    const completeProfileBtn = document.getElementById('complete-profile-btn');
+    if (completeProfileBtn) {
+        completeProfileBtn.addEventListener('click', () => {
+            closeCartSheet();
+            showUserProfile();
+        });
+    }
+    
+    const collectionOptions = document.querySelectorAll('#collection-method-group .radio-option');
+    const deliverySection = document.getElementById('delivery-address-section');
+    
+    collectionOptions.forEach(option => {
+        option.addEventListener('click', function() {
+            collectionOptions.forEach(opt => opt.classList.remove('selected'));
+            this.classList.add('selected');
+            const radio = this.querySelector('input[type="radio"]');
+            if (radio) radio.checked = true;
+            
+            const value = this.getAttribute('data-value');
+            if (value === 'delivery') {
+                deliverySection.style.display = 'block';
+            } else {
+                deliverySection.style.display = 'none';
+            }
+        });
+    });
+    
+    if (hasProfile) {
+        const addressOptions = document.querySelectorAll('#address-option-group .radio-option');
+        const newAddressInput = document.getElementById('new-address-input');
+        
+        addressOptions.forEach(option => {
+            option.addEventListener('click', function() {
+                addressOptions.forEach(opt => opt.classList.remove('selected'));
+                this.classList.add('selected');
+                const radio = this.querySelector('input[type="radio"]');
+                if (radio) radio.checked = true;
+                
+                const addressType = this.getAttribute('data-address-type');
+                if (addressType === 'new') {
+                    newAddressInput.style.display = 'block';
+                } else {
+                    newAddressInput.style.display = 'none';
+                }
+            });
+        });
+    }
+    
+    const paymentOptions = document.querySelectorAll('#payment-methods-group .payment-option');
+    paymentOptions.forEach(option => {
+        option.addEventListener('click', function() {
+            paymentOptions.forEach(opt => opt.classList.remove('selected'));
+            this.classList.add('selected');
+            const radio = this.querySelector('input[type="radio"]');
+            if (radio) radio.checked = true;
+        });
+    });
+    
+    const scheduleSelect = document.getElementById('order-schedule');
+    const scheduleTimeContainer = document.getElementById('schedule-time-container');
+    
+    scheduleSelect.addEventListener('change', function() {
+        if (this.value === 'later') {
+            scheduleTimeContainer.style.display = 'block';
+            document.getElementById('scheduled-time').min = getMinimumScheduledTime();
+        } else {
+            scheduleTimeContainer.style.display = 'none';
+        }
+    });
+    
+    const checkoutBtn = document.getElementById('checkout-btn');
+    if (checkoutBtn) {
+        const newCheckoutBtn = checkoutBtn.cloneNode(true);
+        checkoutBtn.parentNode.replaceChild(newCheckoutBtn, checkoutBtn);
+        
+        newCheckoutBtn.addEventListener('click', () => {
+            submitOrder(profile, hasProfile);
+        });
+    }
+    
+    const cancelBtn = document.getElementById('cancel-order-btn');
+    if (cancelBtn) {
+        cancelBtn.onclick = () => {
+            showCartPage();
+        };
+    }
+}
+
+function getMinimumScheduledTime() {
+    const now = new Date();
+    const minimumTime = new Date(now.getTime() + 3 * 60 * 60 * 1000);
+    
+    const hours = minimumTime.getHours().toString().padStart(2, '0');
+    const minutes = minimumTime.getMinutes().toString().padStart(2, '0');
+    
+    return `${hours}:${minutes}`;
+}
+
+async function checkDatabaseTime() {
+    try {
+        const testTime = new Date().toISOString();
+        
+        const { data, error } = await supabase
+            .from('orders')
+            .insert([
+                {
+                    shop_id: currentShop?.id || 1,
+                    customer_email: 'test@test.com',
+                    order_number: 'TEST-001',
+                    total_amount: 0,
+                    items: [],
+                    created_at: testTime
+                }
+            ])
+            .select('created_at')
+            .single();
+        
+        if (error) throw error;
+        
+        console.log('=== DATABASE TIME TEST ===');
+        console.log('Sent to DB (UTC):', testTime);
+        console.log('Received from DB:', data.created_at);
+        console.log('Formatted SAST:', formatSATime(data.created_at));
+        console.log('Current local time:', new Date().toString());
+        console.log('=== END TEST ===');
+        
+        await supabase.from('orders').delete().eq('order_number', 'TEST-001');
+        
+    } catch (error) {
+        console.error('Time test error:', error);
+    }
+}
+
+function validateScheduledTime(scheduledTime) {
+    if (!scheduledTime) return false;
+    
+    const nowSAST = getSouthAfricaTime();
+    const scheduled = new Date(nowSAST);
+    
+    const [hours, minutes] = scheduledTime.split(':').map(Number);
+    scheduled.setHours(hours, minutes, 0, 0);
+    
+    if (scheduled <= nowSAST) {
+        scheduled.setDate(scheduled.getDate() + 1);
+    }
+    
+    const threeHoursFromNow = new Date(nowSAST.getTime() + 3 * 60 * 60 * 1000);
+    
+    return scheduled >= threeHoursFromNow;
+}
+
+
+function formatScheduledDateTime(timeString) {
+    const now = new Date();
+    const scheduled = new Date();
+    
+    const [hours, minutes] = timeString.split(':').map(Number);
+    scheduled.setHours(hours, minutes, 0, 0);
+    
+    if (scheduled <= now) {
+        scheduled.setDate(scheduled.getDate() + 1);
+    }
+    
+    return scheduled.toISOString();
+}
+
+async function submitOrder(profile, hasProfileFromCheckout) {
+    if (!currentUser || !currentShop) return;
+    
+    const collectionMethod = document.getElementById('collection-method').value;
+    const paymentMethod = document.getElementById('payment-method').value;
+    const orderSchedule = document.getElementById('order-schedule').value;
+    let scheduledTime = null;
+    
+    if (!collectionMethod) {
+        alert('Please select a collection method');
+        return;
+    }
+    
+    if (!paymentMethod) {
+        alert('Please select a payment method');
+        return;
+    }
+    
+    if (orderSchedule === 'later') {
+        const timeInput = document.getElementById('scheduled-time').value;
+        if (!timeInput) {
+            alert('Please select a scheduled time');
+            return;
+        }
+        
+        if (!validateScheduledTime(timeInput)) {
+            alert('Scheduled time must be at least 3 hours from now');
+            return;
+        }
+        
+        scheduledTime = formatScheduledDateTime(timeInput);
+    }
+    
+    if (collectionMethod === 'delivery') {
+        const hasProfile = hasProfileFromCheckout || false;
+        
+        if (hasProfile) {
+            const addressType = document.querySelector('input[name="delivery-address"]:checked');
+            if (!addressType) {
+                alert('Please select a delivery address option');
+                return;
+            }
+            
+            if (addressType.value === 'new') {
+                const address = document.getElementById('delivery-address').value.trim();
+                if (!address) {
+                    alert('Please enter a delivery address');
+                    return;
+                }
+            }
+        } else {
+            const address = document.getElementById('delivery-address').value.trim();
+            if (!address) {
+                alert('Please enter a delivery address');
+                return;
+            }
+        }
+    }
+
+let totalAmount = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+
+if (collectionMethod === 'delivery' && currentShop.delivery_charge_within_2km) {
+    totalAmount += parseFloat(currentShop.delivery_charge_within_2km);
+}
+    
+    try {
+        const orderNumber = await generateOrderNumber(currentShop.id, 'online');
+        
+        const totalAmount = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+        
+        const nowSAST = getSouthAfricaTime();
+        
+        const orderData = {
+            shop_id: currentShop.id,
+            customer_email: currentUser.email,
+            order_number: orderNumber,
+            order_type: 'online',
+            total_amount: totalAmount,
+            collection_method: collectionMethod,
+            payment_method: paymentMethod,
+            order_schedule: orderSchedule,
+            status: 'waiting',
+            items: cart.map(item => ({
+                id: item.id,
+                name: item.name,
+                price: item.price,
+                quantity: item.quantity,
+                addons: item.selectedAddons || []
+            })),
+            created_at: nowSAST.toISOString()
+        };
+        
+        if (scheduledTime) {
+            orderData.scheduled_time = scheduledTime;
+        }
+        
+        if (collectionMethod === 'delivery') {
+            const hasProfile = hasProfileFromCheckout || false;
+            let deliveryAddress = '';
+            
+            if (hasProfile) {
+                const addressType = document.querySelector('input[name="delivery-address"]:checked');
+                if (addressType.value === 'new') {
+                    deliveryAddress = document.getElementById('delivery-address').value.trim();
+                } else {
+                    deliveryAddress = profile.address;
+                }
+            } else {
+                deliveryAddress = document.getElementById('delivery-address').value.trim();
+            }
+            
+            orderData.delivery_address = deliveryAddress;
+        }
+        
+        const { data: order, error: orderError } = await supabase
+            .from('orders')
+            .insert([orderData])
+            .select()
+            .single();
+        
+        if (orderError) throw orderError;
+        
+        cart = [];
+        updateCartIcon();
+        
+        showOrderConfirmation(order);
+        
+    } catch (error) {
+        console.error("Error submitting order:", error);
+        alert('Error submitting order: ' + error.message);
+    }
+}
+
+function showOrderConfirmation(order, deliveryCharge = 0) {
+    const foodTotal = parseFloat(order.total_amount) - deliveryCharge;
+    
+    const mainContent = document.getElementById('main-content');
+    mainContent.innerHTML = `
+        <style>
+            .confirmation-container {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                min-height: calc(100vh - 140px);
+                padding: 20px;
+                margin-top: 70px;
+                margin-bottom: 80px;
+                animation: fadeInConfirm 0.5s ease;
+            }
+            
+            @keyframes fadeInConfirm {
+                from {
+                    opacity: 0;
+                    transform: scale(0.95);
+                }
+                to {
+                    opacity: 1;
+                    transform: scale(1);
+                }
+            }
+            
+            .confirmation-card {
+                background: white;
+                border-radius: 40px;
+                padding: 40px 32px;
+                max-width: 480px;
+                width: 100%;
+                text-align: center;
+                box-shadow: 0 20px 40px rgba(0, 0, 0, 0.08);
+                border: 1px solid #f0f0f0;
+                position: relative;
+                overflow: hidden;
+            }
+            
+            .confirmation-card::before {
+                content: '';
+                position: absolute;
+                top: 0;
+                left: 0;
+                right: 0;
+                height: 6px;
+                background: linear-gradient(90deg, var(--primary), var(--secondary));
+            }
+            
+            .success-animation {
+                margin-bottom: 24px;
+            }
+            
+            .checkmark-circle {
+                width: 100px;
+                height: 100px;
+                background: linear-gradient(135deg, #e8f5e9, #c8e6c9);
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                margin: 0 auto;
+                animation: pulseSuccess 0.5s ease-out;
+            }
+            
+            @keyframes pulseSuccess {
+                0% {
+                    transform: scale(0);
+                    opacity: 0;
+                }
+                50% {
+                    transform: scale(1.1);
+                }
+                100% {
+                    transform: scale(1);
+                    opacity: 1;
+                }
+            }
+            
+            .checkmark-circle i {
+                font-size: 56px;
+                color: #4caf50;
+            }
+            
+            .confirmation-card h2 {
+                font-size: 28px;
+                font-weight: 800;
+                margin: 0 0 8px;
+                color: #1e293b;
+            }
+            
+            .confirmation-card > p {
+                color: #64748b;
+                font-size: 15px;
+                margin: 0 0 24px;
+            }
+            
+            .order-details-card {
+                background: #f8fafc;
+                border-radius: 24px;
+                padding: 20px;
+                margin: 24px 0;
+                text-align: left;
+            }
+            
+            .order-number-section {
+                text-align: center;
+                padding-bottom: 16px;
+                margin-bottom: 16px;
+                border-bottom: 2px dashed #e2e8f0;
+            }
+            
+            .order-number-label {
+                font-size: 11px;
+                color: #94a3b8;
+                text-transform: uppercase;
+                letter-spacing: 1px;
+                margin-bottom: 4px;
+            }
+            
+            .order-number-value {
+                font-size: 24px;
+                font-weight: 800;
+                color: var(--primary);
+                font-family: 'Courier New', monospace;
+                letter-spacing: 1px;
+            }
+            
+            .order-detail-row {
+                display: flex;
+                justify-content: space-between;
+                padding: 10px 0;
+                border-bottom: 1px solid #e2e8f0;
+            }
+            
+            .order-detail-row:last-child {
+                border-bottom: none;
+            }
+            
+            .detail-label {
+                color: #64748b;
+                font-size: 13px;
+            }
+            
+            .detail-value {
+                font-weight: 600;
+                color: #1e293b;
+                font-size: 14px;
+            }
+            
+            .total-row {
+                margin-top: 12px;
+                padding-top: 12px;
+                border-top: 2px solid var(--primary);
+            }
+            
+            .total-row .detail-label {
+                font-weight: 700;
+                font-size: 16px;
+                color: #1e293b;
+            }
+            
+            .total-row .detail-value {
+                font-size: 20px;
+                font-weight: 800;
+                color: var(--primary);
+            }
+            
+            .status-badge {
+                display: inline-block;
+                background: #fff3e0;
+                color: #b85c1a;
+                padding: 6px 16px;
+                border-radius: 30px;
+                font-size: 13px;
+                font-weight: 600;
+                margin-top: 12px;
+            }
+            
+            .info-message {
+                background: #e7f3ff;
+                border-radius: 16px;
+                padding: 16px;
+                margin: 20px 0;
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                text-align: left;
+            }
+            
+            .info-message i {
+                font-size: 24px;
+                color: #0066cc;
+            }
+            
+            .info-message p {
+                margin: 0;
+                font-size: 13px;
+                color: #0066cc;
+                line-height: 1.4;
+            }
+            
+            .action-buttons {
+                display: flex;
+                flex-direction: column;
+                gap: 12px;
+                margin-top: 24px;
+            }
+            
+            .btn-view-orders {
+                background: linear-gradient(135deg, var(--primary), var(--secondary));
+                color: white;
+                border: none;
+                padding: 16px;
+                border-radius: 40px;
+                font-weight: 700;
+                font-size: 16px;
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 10px;
+                transition: all 0.2s;
+            }
+            
+            .btn-view-orders:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 8px 20px rgba(255, 123, 49, 0.3);
+            }
+            
+            .btn-continue-shopping-confirm {
+                background: white;
+                color: #475569;
+                border: 1px solid #e2e8f0;
+                padding: 16px;
+                border-radius: 40px;
+                font-weight: 600;
+                font-size: 15px;
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 8px;
+                transition: all 0.2s;
+            }
+            
+            .btn-continue-shopping-confirm:hover {
+                background: #f8fafc;
+                border-color: var(--primary);
+                color: var(--primary);
+            }
+            
+            .share-section {
+                margin-top: 20px;
+                padding-top: 20px;
+                border-top: 1px solid #f0f0f0;
+                display: flex;
+                justify-content: center;
+                gap: 24px;
+            }
+            
+            .share-btn {
+                background: none;
+                border: none;
+                color: #94a3b8;
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                font-size: 13px;
+                transition: all 0.2s;
+                padding: 8px 12px;
+                border-radius: 30px;
+            }
+            
+            .share-btn:hover {
+                background: #f1f5f9;
+                color: var(--primary);
+            }
+            
+            .share-btn i {
+                font-size: 16px;
+            }
+            
+            @media (max-width: 480px) {
+                .confirmation-card {
+                    padding: 32px 24px;
+                }
+                
+                .checkmark-circle {
+                    width: 80px;
+                    height: 80px;
+                }
+                
+                .checkmark-circle i {
+                    font-size: 44px;
+                }
+                
+                .confirmation-card h2 {
+                    font-size: 24px;
+                }
+                
+                .order-number-value {
+                    font-size: 20px;
+                }
+                
+                .total-row .detail-value {
+                    font-size: 18px;
+                }
+            }
+        </style>
+        
+        <div class="confirmation-container">
+            <div class="confirmation-card">
+                <div class="success-animation">
+                    <div class="checkmark-circle">
+                        <i class="fas fa-check-circle"></i>
+                    </div>
+                </div>
+                
+                <h2>Order Placed!</h2>
+                <p>Your order has been received and is being processed</p>
+                
+                <div class="order-details-card">
+                    <div class="order-number-section">
+                        <div class="order-number-label">Order Number</div>
+                        <div class="order-number-value">${order.order_number}</div>
+                    </div>
+                    
+                    <div class="order-detail-row">
+                        <span class="detail-label">Food Total</span>
+                        <span class="detail-value">R${foodTotal.toFixed(2)}</span>
+                    </div>
+                    
+                    ${deliveryCharge > 0 ? `
+                        <div class="order-detail-row">
+                            <span class="detail-label">Delivery Fee</span>
+                            <span class="detail-value">R${deliveryCharge.toFixed(2)}</span>
+                        </div>
+                    ` : ''}
+                    
+                    <div class="order-detail-row total-row">
+                        <span class="detail-label">Total Amount</span>
+                        <span class="detail-value">R${parseFloat(order.total_amount).toFixed(2)}</span>
+                    </div>
+                    
+                    <div class="order-detail-row">
+                        <span class="detail-label">Collection Method</span>
+                        <span class="detail-value" style="text-transform: capitalize;">${order.collection_method}</span>
+                    </div>
+                    
+                    <div class="order-detail-row">
+                        <span class="detail-label">Payment Method</span>
+                        <span class="detail-value" style="text-transform: capitalize;">${order.payment_method === 'cash' ? 'Cash' : 'Bank Card'}</span>
+                    </div>
+                    
+                    ${order.collection_method === 'delivery' && order.delivery_address ? `
+                        <div class="order-detail-row">
+                            <span class="detail-label">Delivery Address</span>
+                            <span class="detail-value" style="font-size: 12px;">${escapeHtml(order.delivery_address)}</span>
+                        </div>
+                    ` : ''}
+                    
+                    ${order.order_schedule === 'later' && order.scheduled_time ? `
+                        <div class="order-detail-row">
+                            <span class="detail-label">Scheduled For</span>
+                            <span class="detail-value">${formatSATime(new Date(order.scheduled_time))}</span>
+                        </div>
+                    ` : ''}
+                    
+                    <div style="text-align: center;">
+                        <span class="status-badge">
+                            <i class="fas fa-clock"></i> Status: ${order.status === 'waiting' ? 'Waiting for confirmation' : order.status}
+                        </span>
+                    </div>
+                </div>
+                
+                <div class="info-message">
+                    <i class="fas fa-info-circle"></i>
+                    <p>You'll receive a notification when your order is ready. You can track your order status in the Orders section.</p>
+                </div>
+                
+                <div class="action-buttons">
+                    <button class="btn-view-orders" id="view-orders-btn">
+                        <i class="fas fa-list"></i>
+                        View My Orders
+                    </button>
+                    <button class="btn-continue-shopping-confirm" id="continue-shopping-btn">
+                        <i class="fas fa-utensils"></i>
+                        Continue Shopping
+                    </button>
+                </div>
+                
+                <div class="share-section">
+                    <button class="share-btn" id="share-order-btn">
+                        <i class="fas fa-share-alt"></i>
+                        Share Order
+                    </button>
+                    <button class="share-btn" id="save-order-btn">
+                        <i class="fas fa-download"></i>
+                        Save Receipt
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.getElementById('view-orders-btn').addEventListener('click', () => {
+        showOrdersPage();
+
+        document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
+        document.querySelector('.nav-item[data-page="orders"]').classList.add('active');
+    });
+    
+    document.getElementById('continue-shopping-btn').addEventListener('click', () => {
+        showMenuPage();
+
+        document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
+        document.querySelector('.nav-item[data-page="home"]').classList.add('active');
+    });
+    
+    document.getElementById('share-order-btn').addEventListener('click', () => {
+
+        const shareText = `Order #${order.order_number} placed with Fasfood! Total: R${parseFloat(order.total_amount).toFixed(2)}`;
+        if (navigator.share) {
+            navigator.share({
+                title: 'Order Confirmation',
+                text: shareText,
+                url: window.location.href
+            }).catch(() => {
+                copyToClipboard(shareText);
+                showToast('Order details copied to clipboard!');
+            });
+        } else {
+            copyToClipboard(shareText);
+            showToast('Order details copied to clipboard!');
+        }
+    });
+    
+    document.getElementById('save-order-btn').addEventListener('click', () => {
+
+        const receipt = `
+        === FASFOOD ORDER RECEIPT ===
+        Order Number: ${order.order_number}
+        Date: ${formatSATime(new Date(order.created_at))}
+        ${deliveryCharge > 0 ? `Delivery Fee: R${deliveryCharge.toFixed(2)}` : ''}
+        Total Amount: R${parseFloat(order.total_amount).toFixed(2)}
+        Collection: ${order.collection_method}
+        Payment: ${order.payment_method === 'cash' ? 'Cash' : 'Bank Card'}
+        Status: ${order.status}
+        ${order.order_schedule === 'later' ? `Scheduled: ${formatSATime(new Date(order.scheduled_time))}` : ''}
+        Thank you for ordering with Fasfood!
+        `;
+        
+        const blob = new Blob([receipt], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `order_${order.order_number}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        showToast('Receipt downloaded!');
+    });
+    
+    window.scrollTo(0, 0);
+    document.getElementById('bottom-nav').style.display = 'flex';
+}
+
+function copyToClipboard(text) {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand('copy');
+    document.body.removeChild(textarea);
+}
+
+async function showOrdersPage() {
+    setHeaderVisibility(true);
+
+    showOrdersSkeleton();
+
+    showLoading('Loading orders...');
+    if (!currentUser || !currentShop) return;
+
+    if (currentShop) {
+        updateHeaderText(currentShop);
+    }
+    
+    try {
+        const { data: profile, error: profileError } = await supabase
+            .from('user_profiles')
+            .select('customer_id')
+            .eq('customer_email', currentUser.email)
+            .single();
+        
+        const { data: orders, error } = await supabase
+            .from('orders')
+            .select('*')
+            .eq('customer_email', currentUser.email)
+            .eq('shop_id', currentShop.id)
+            .order('created_at', { ascending: false });
+        
+        if (error) throw error;
+        
+        const mainContent = document.getElementById('main-content');
+        
+        if (!orders || orders.length === 0) {
+            mainContent.innerHTML = `
+                <style>
+                    .empty-orders-container {
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        min-height: calc(100vh - 140px);
+                        padding: 20px;
+                        margin-top: 70px;
+                        animation: fadeInOrders 0.5s ease;
+                    }
+                    
+                    @keyframes fadeInOrders {
+                        from { opacity: 0; transform: translateY(20px); }
+                        to { opacity: 1; transform: translateY(0); }
+                    }
+                    
+                    .empty-orders-card {
+                        background: white;
+                        border-radius: 32px;
+                        padding: 48px 32px;
+                        max-width: 400px;
+                        width: 100%;
+                        text-align: center;
+                        border: 1px solid #f0f0f0;
+                        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
+                    }
+                    
+                    .empty-icon {
+                        width: 100px;
+                        height: 100px;
+                        margin: 0 auto 24px;
+                        background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+                        border-radius: 50%;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                    }
+                    
+                    .empty-icon i {
+                        font-size: 48px;
+                        color: #adb5bd;
+                    }
+                    
+                    .empty-orders-card h3 {
+                        font-size: 22px;
+                        font-weight: 700;
+                        margin: 0 0 8px;
+                        color: #1e293b;
+                    }
+                    
+                    .empty-orders-card p {
+                        color: #64748b;
+                        font-size: 14px;
+                        line-height: 1.5;
+                        margin: 0 0 28px;
+                    }
+                    
+                    .start-ordering-btn {
+                        background: linear-gradient(135deg, var(--primary), var(--secondary));
+                        color: white;
+                        border: none;
+                        padding: 14px 28px;
+                        border-radius: 40px;
+                        font-weight: 600;
+                        font-size: 15px;
+                        cursor: pointer;
+                        display: inline-flex;
+                        align-items: center;
+                        gap: 10px;
+                        transition: all 0.2s;
+                    }
+                    
+                    .start-ordering-btn:hover {
+                        transform: translateY(-2px);
+                        box-shadow: 0 8px 20px rgba(255, 123, 49, 0.25);
+                    }
+                    
+                    .order-stats {
+                        display: flex;
+                        justify-content: center;
+                        gap: 24px;
+                        margin-top: 28px;
+                        padding-top: 24px;
+                        border-top: 1px solid #f0f0f0;
+                    }
+                    
+                    .stat-item {
+                        text-align: center;
+                    }
+                    
+                    .stat-number {
+                        font-size: 20px;
+                        font-weight: 700;
+                        color: var(--primary);
+                    }
+                    
+                    .stat-label {
+                        font-size: 11px;
+                        color: #94a3b8;
+                        margin-top: 4px;
+                    }
+                </style>
+                
+                <div class="empty-orders-container">
+                    <div class="empty-orders-card">
+                        <div class="empty-icon">
+                            <i class="fas fa-receipt"></i>
+                        </div>
+                        <h3>No orders yet</h3>
+                        <p>Your order history will appear here once you start ordering from your favorite shops.</p>
+                        <button class="start-ordering-btn" id="start-ordering-btn">
+                            <i class="fas fa-utensils"></i>
+                            Start Ordering
+                        </button>
+                        <div class="order-stats">
+                            <div class="stat-item">
+                                <div class="stat-number">0</div>
+                                <div class="stat-label">Total Orders</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-number">0</div>
+                                <div class="stat-label">Completed</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            document.getElementById('start-ordering-btn').addEventListener('click', showMenuPage);
+        } else {
+
+            const totalOrders = orders.length;
+            const completedOrders = orders.filter(o => o.status === 'completed').length;
+            const pendingOrders = orders.filter(o => ['waiting', 'preparing', 'ready'].includes(o.status)).length;
+            
+            mainContent.innerHTML = `
+                <style>
+                    .orders-container {
+                        padding: 20px;
+                        margin-top: 70px;
+                        margin-bottom: 80px;
+                        max-width: 600px;
+                        margin-left: auto;
+                        margin-right: auto;
+                    }
+                    
+                    .orders-header {
+                        margin-bottom: 24px;
+                    }
+                    
+                    .orders-header h2 {
+                        font-size: 24px;
+                        font-weight: 700;
+                        margin: 0 0 4px;
+                        color: #1e293b;
+                    }
+                    
+                    .orders-header p {
+                        font-size: 14px;
+                        color: #64748b;
+                        margin: 0;
+                    }
+                    
+                    .stats-row {
+                        display: flex;
+                        gap: 12px;
+                        margin-bottom: 24px;
+                        flex-wrap: wrap;
+                    }
+                    
+                    .stat-card {
+                        flex: 1;
+                        background: white;
+                        border-radius: 20px;
+                        padding: 16px;
+                        text-align: center;
+                        border: 1px solid #f0f0f0;
+                        min-width: 100px;
+                    }
+                    
+                    .stat-number {
+                        font-size: 28px;
+                        font-weight: 800;
+                        color: var(--primary);
+                        line-height: 1;
+                    }
+                    
+                    .stat-label {
+                        font-size: 12px;
+                        color: #64748b;
+                        margin-top: 6px;
+                    }
+                    
+                    ${profile?.customer_id ? `
+                        .customer-id-badge {
+                            background: #f8fafc;
+                            border-radius: 16px;
+                            padding: 12px 16px;
+                            margin-bottom: 24px;
+                            display: flex;
+                            align-items: center;
+                            gap: 12px;
+                            border: 1px solid #eef2f6;
+                        }
+                        
+                        .customer-id-badge i {
+                            font-size: 20px;
+                            color: var(--primary);
+                        }
+                        
+                        .customer-id-badge span {
+                            font-size: 13px;
+                            color: #475569;
+                        }
+                        
+                        .customer-id-badge strong {
+                            color: var(--primary);
+                            font-family: monospace;
+                            font-size: 14px;
+                            margin-left: 8px;
+                        }
+                    ` : ''}
+                    
+                    .orders-list {
+                        display: flex;
+                        flex-direction: column;
+                        gap: 16px;
+                    }
+                    
+                    .order-card {
+                        background: white;
+                        border-radius: 24px;
+                        overflow: hidden;
+                        border: 1px solid #f0f0f0;
+                        transition: all 0.2s;
+                    }
+                    
+                    .order-card:hover {
+                        transform: translateY(-2px);
+                        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+                    }
+                    
+                    .order-header {
+                        padding: 16px 20px;
+                        background: #fafbfc;
+                        border-bottom: 1px solid #f0f0f0;
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                        flex-wrap: wrap;
+                        gap: 10px;
+                    }
+                    
+                    .order-info {
+                        display: flex;
+                        align-items: center;
+                        gap: 12px;
+                        flex-wrap: wrap;
+                    }
+                    
+                    .order-number {
+                        font-weight: 700;
+                        font-size: 15px;
+                        color: #1e293b;
+                    }
+                    
+                    .order-badge {
+                        padding: 4px 10px;
+                        border-radius: 30px;
+                        font-size: 11px;
+                        font-weight: 600;
+                    }
+                    
+                    .order-badge.online {
+                        background: #e7f3ff;
+                        color: #0066cc;
+                    }
+                    
+                    .order-badge.offline {
+                        background: #f1f5f9;
+                        color: #475569;
+                    }
+                    
+                    .order-badge.scheduled {
+                        background: #fff3e0;
+                        color: #b85c1a;
+                    }
+                    
+                    .order-date {
+                        font-size: 12px;
+                        color: #94a3b8;
+                    }
+                    
+                    .order-status-badge {
+                        padding: 6px 14px;
+                        border-radius: 30px;
+                        font-size: 12px;
+                        font-weight: 600;
+                    }
+                    
+                    .status-waiting {
+                        background: #e7f3ff;
+                        color: #0066cc;
+                    }
+                    
+                    .status-preparing {
+                        background: #fff3e0;
+                        color: #b85c1a;
+                    }
+                    
+                    .status-ready {
+                        background: #e6f7e6;
+                        color: #2e7d32;
+                    }
+                    
+                    .status-completed {
+                        background: #f1f5f9;
+                        color: #475569;
+                    }
+                    
+                    .status-cancelled {
+                        background: #fee2e2;
+                        color: #dc2626;
+                    }
+                    
+                    .order-items {
+                        padding: 16px 20px;
+                        border-bottom: 1px solid #f5f5f5;
+                    }
+                    
+                    .order-item {
+                        display: flex;
+                        justify-content: space-between;
+                        padding: 8px 0;
+                        font-size: 14px;
+                    }
+                    
+                    .order-item:last-child {
+                        padding-bottom: 0;
+                    }
+                    
+                    .item-name {
+                        color: #334155;
+                    }
+                    
+                    .item-price {
+                        font-weight: 500;
+                        color: #1e293b;
+                    }
+                    
+                    .order-footer {
+                        padding: 16px 20px;
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                        flex-wrap: wrap;
+                        gap: 12px;
+                    }
+                    
+                    .order-total {
+                        font-weight: 700;
+                        font-size: 16px;
+                        color: #1e293b;
+                    }
+                    
+                    .order-total span {
+                        color: var(--primary);
+                        font-size: 18px;
+                    }
+                    
+                    .order-meta {
+                        display: flex;
+                        gap: 16px;
+                        font-size: 12px;
+                        color: #64748b;
+                    }
+                    
+                    .order-meta i {
+                        margin-right: 4px;
+                        color: #94a3b8;
+                    }
+                    
+                    @media (max-width: 480px) {
+                        .orders-container {
+                            padding: 16px;
+                        }
+                        
+                        .order-header {
+                            padding: 14px 16px;
+                        }
+                        
+                        .order-items {
+                            padding: 14px 16px;
+                        }
+                        
+                        .order-footer {
+                            padding: 14px 16px;
+                            flex-direction: column;
+                            align-items: flex-start;
+                        }
+                        
+                        .stats-row {
+                            gap: 8px;
+                        }
+                        
+                        .stat-card {
+                            padding: 12px;
+                        }
+                        
+                        .stat-number {
+                            font-size: 22px;
+                        }
+                    }
+                </style>
+                
+                <div class="orders-container">
+                    <div class="orders-header">
+                        <h2>My Orders</h2>
+                        <p>Track and view your order history</p>
+                    </div>
+                    
+                    <div class="stats-row">
+                        <div class="stat-card">
+                            <div class="stat-number">${totalOrders}</div>
+                            <div class="stat-label">Total Orders</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number">${completedOrders}</div>
+                            <div class="stat-label">Completed</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number">${pendingOrders}</div>
+                            <div class="stat-label">Active</div>
+                        </div>
+                    </div>
+                    
+                    ${profile?.customer_id ? `
+                        <div class="customer-id-badge">
+                            <i class="fas fa-id-card"></i>
+                            <span>Your Customer ID:</span>
+                            <strong>${profile.customer_id}</strong>
+                        </div>
+                    ` : ''}
+                    
+                    <div class="orders-list">
+                        ${orders.map(order => {
+                            const isScheduled = order.order_schedule === 'later' && order.scheduled_time;
+                            const scheduledDate = isScheduled ? new Date(order.scheduled_time) : null;
+                            
+                            return `
+                                <div class="order-card">
+                                    <div class="order-header">
+                                        <div class="order-info">
+                                            <span class="order-number">#${order.order_number}</span>
+                                            <span class="order-badge ${order.order_type}">
+                                                <i class="fas ${order.order_type === 'online' ? 'fa-mobile-alt' : 'fa-store'}"></i>
+                                                ${order.order_type === 'online' ? 'Online' : 'Walk-in'}
+                                            </span>
+                                            ${isScheduled ? `
+                                                <span class="order-badge scheduled">
+                                                    <i class="fas fa-clock"></i> Scheduled
+                                                </span>
+                                            ` : ''}
+                                            <span class="order-date">
+                                                <i class="far fa-calendar-alt"></i> ${formatSATime(new Date(order.created_at))}
+                                            </span>
+                                        </div>
+                                        <span class="order-status-badge status-${order.status}">
+                                            ${order.status === 'waiting' ? '⏳ Waiting' : 
+                                              order.status === 'preparing' ? '👨‍🍳 Preparing' : 
+                                              order.status === 'ready' ? '✅ Ready' : 
+                                              order.status === 'completed' ? '✓ Completed' : '✗ Cancelled'}
+                                        </span>
+                                    </div>
+                                    
+                                    <div class="order-items">
+                                        ${order.items.slice(0, 2).map(item => `
+                                            <div class="order-item">
+                                                <span class="item-name">${escapeHtml(item.name)} × ${item.quantity}</span>
+                                                <span class="item-price">R${(parseFloat(item.price) * item.quantity).toFixed(2)}</span>
+                                            </div>
+                                        `).join('')}
+                                        ${order.items.length > 2 ? `
+                                            <div class="order-item" style="color: #94a3b8; font-size: 12px;">
+                                                <span>+ ${order.items.length - 2} more item(s)</span>
+                                            </div>
+                                        ` : ''}
+                                    </div>
+                                    
+                                    <div class="order-footer">
+                                        <div class="order-total">
+                                            Total: <span>R${parseFloat(order.total_amount).toFixed(2)}</span>
+                                        </div>
+                                        <div class="order-meta">
+                                            <span><i class="fas fa-truck"></i> ${order.collection_method === 'pickup' ? 'Pickup' : 'Delivery'}</span>
+                                            <span><i class="fas fa-credit-card"></i> ${order.payment_method === 'cash' ? 'Cash' : 'Card'}</span>
+                                            ${isScheduled && scheduledDate ? `
+                                                <span><i class="fas fa-clock"></i> ${formatSATime(scheduledDate)}</span>
+                                            ` : ''}
+                                        </div>
+                                    </div>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                </div>
+            `;
+        }
+        
+        document.getElementById('bottom-nav').style.display = 'flex';
+        startOrderPageRefresh();
+        
+    } catch (error) {
+        console.error("Error loading orders:", error);
+        showToast('Error loading orders', 'error');
+    } finally {
+        setTimeout(hideLoading, 300);
+    }
+}
+
+let orderRefreshInterval = null;
+
+function showOrdersSkeleton() {
+    const mainContent = document.getElementById('main-content');
+    mainContent.innerHTML = `
+        <div class="orders-container">
+            <div class="orders-header">
+                <div class="skeleton" style="width: 150px; height: 32px; margin-bottom: 8px;"></div>
+                <div class="skeleton" style="width: 200px; height: 16px;"></div>
+            </div>
+            
+            <div class="skeleton-stats">
+                ${Array(3).fill('<div class="skeleton-stat-card"></div>').join('')}
+            </div>
+            
+            <div class="orders-list">
+                ${Array(3).fill(`
+                    <div class="skeleton-order-card">
+                        <div class="skeleton-order-header">
+                            <div class="skeleton-order-number"></div>
+                            <div class="skeleton-order-status"></div>
+                        </div>
+                        <div class="skeleton-order-item"></div>
+                        <div class="skeleton-order-item" style="width: 80%;"></div>
+                        <div class="skeleton-order-footer">
+                            <div class="skeleton-order-total"></div>
+                            <div class="skeleton-order-meta"></div>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+    `;
+}
+
+function startOrderPageRefresh() {
+    if (orderRefreshInterval) {
+        clearInterval(orderRefreshInterval);
+    }
+    
+    console.log("Starting order page refresh (every 5 seconds)");
+    
+    orderRefreshInterval = setInterval(async () => {
+        const activeNavItem = document.querySelector('.nav-item.active');
+        if (activeNavItem && activeNavItem.getAttribute('data-page') === 'orders') {
+            console.log("Refreshing orders page...");
+            
+            const refreshIndicator = document.createElement('div');
+            refreshIndicator.style.cssText = `
+                position: fixed;
+                top: 70px;
+                right: 20px;
+                background: rgba(255, 123, 49, 0.2);
+                color: var(--primary);
+                padding: 5px 10px;
+                border-radius: 20px;
+                font-size: 12px;
+                z-index: 9999;
+                animation: fadeOut 2s ease;
+                display: none;
+            `;
+            refreshIndicator.innerHTML = '';
+            document.body.appendChild(refreshIndicator);
+            
+            setTimeout(() => {
+                if (refreshIndicator.parentNode) {
+                    refreshIndicator.remove();
+                }
+            }, 2000);
+            
+            await refreshOrdersData();
+        }
+    }, 5000); 
+}
+
+async function refreshOrdersData() {
+    if (!currentUser || !currentShop) return;
+    
+    try {
+        const { data: orders, error } = await supabase
+            .from('orders')
+            .select('*')
+            .eq('customer_email', currentUser.email)
+            .eq('shop_id', currentShop.id)
+            .order('created_at', { ascending: false });
+        
+        if (error) throw error;
+        
+        const ordersList = document.querySelector('.orders-list');
+        if (!ordersList) return;
+        
+        if (!orders || orders.length === 0) {
+            return;
+        }
+        
+        const orderCards = document.querySelectorAll('.order-card');
+        
+        if (orderCards.length > 0) {
+            orders.forEach((order, index) => {
+                const orderCard = orderCards[index];
+                if (orderCard) {
+
+                    const statusBadge = orderCard.querySelector('.order-status-badge');
+                    const oldStatus = statusBadge ? statusBadge.textContent.trim().toLowerCase() : '';
+                    const newStatus = order.status;
+                    
+                    const statusMap = {
+                        'waiting': '⏳ Waiting',
+                        'preparing': '👨‍🍳 Preparing',
+                        'ready': '✅ Ready',
+                        'completed': '✓ Completed',
+                        'cancelled': '✗ Cancelled'
+                    };
+                    
+                    const expectedStatusText = statusMap[newStatus] || newStatus;
+                    
+                    if (statusBadge && statusBadge.textContent.trim() !== expectedStatusText) {
+
+                        statusBadge.textContent = expectedStatusText;
+                        statusBadge.className = `order-status-badge status-${newStatus}`;
+                        
+                        showOrderStatusNotification(order.order_number, newStatus);
+                    }
+                    
+                    updateOrderStats(orders);
+                }
+            });
+        }
+        
+    } catch (error) {
+        console.error("Error refreshing orders:", error);
+    }
+}
+
+function updateOrderStats(orders) {
+    const totalOrders = orders.length;
+    const completedOrders = orders.filter(o => o.status === 'completed').length;
+    const pendingOrders = orders.filter(o => ['waiting', 'preparing', 'ready'].includes(o.status)).length;
+    
+    const statNumbers = document.querySelectorAll('.stat-number');
+    if (statNumbers.length >= 3) {
+        statNumbers[0].textContent = totalOrders;
+        statNumbers[1].textContent = completedOrders;
+        statNumbers[2].textContent = pendingOrders;
+    }
+}
+
+function showOrderStatusNotification(orderNumber, newStatus) {
+    const notification = document.createElement('div');
+    notification.style.cssText = `
+        position: fixed;
+        top: 80px;
+        right: 20px;
+        background: linear-gradient(135deg, var(--primary), var(--secondary));
+        color: white;
+        padding: 15px 20px;
+        border-radius: 10px;
+        z-index: 10000;
+        max-width: 300px;
+        animation: slideIn 0.3s ease-out;
+    `;
+    
+    let statusMessage = '';
+    let statusIcon = '';
+    
+    switch(newStatus) {
+        case 'ready':
+            statusIcon = '';
+            statusMessage = 'Your order is ready for pickup!';
+            break;
+        case 'preparing':
+            statusIcon = '';
+            statusMessage = 'Your order is being prepared';
+            break;
+        case 'cancelled':
+            statusIcon = '';
+            statusMessage = 'Your order has been cancelled';
+            break;
+        default:
+            statusIcon = '';
+            statusMessage = `Order status updated to ${newStatus}`;
+    }
+    
+    notification.innerHTML = `
+        <div style="display: flex; align-items: center; gap: 12px;">
+            <div style="font-size: 1.5rem;">${statusIcon}</div>
+            <div>
+                <strong>Order #${orderNumber}</strong>
+                <div style="font-size: 0.9rem; margin-top: 3px;">${statusMessage}</div>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(notification);
+    
+    setTimeout(() => {
+        if (notification.parentNode) {
+            notification.style.animation = 'slideOut 0.3s ease-out';
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.remove();
+                }
+            }, 300);
+        }
+    }, 5000);
+}
+
+
+function showToast(message, type = 'success') {
+    const toast = document.createElement('div');
+    toast.style.cssText = `
+        position: fixed;
+        top: 100px;
+        right: 20px;
+        background: ${type === 'error' ? '#dc3545' : '#28a745'};
+        color: white;
+        padding: 12px 20px;
+        border-radius: 5px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        z-index: 10000;
+        max-width: 300px;
+        word-wrap: break-word;
+    `;
+    toast.textContent = message;
+    
+    document.body.appendChild(toast);
+    
+    setTimeout(() => {
+        toast.remove();
+    }, 3000);
+}
+
+async function loadShopAdminOrders() {
+    if (!currentShop) return;
+    
+    try {
+        const { data: orders, error } = await supabase
+            .from('orders')
+            .select('*')
+            .eq('shop_id', currentShop.id)
+            .order('created_at', { ascending: false });
+        
+        if (error) throw error;
+        
+        const ordersSection = document.createElement('div');
+        ordersSection.className = 'admin-section';
+        ordersSection.id = 'shop-orders';
+        ordersSection.innerHTML = `
+            <h2>Order Management</h2>
+            <div class="orders-management" id="shop-orders-list">
+                ${orders && orders.length > 0 ? orders.map(order => `
+                    <div class="order-item-admin" style="background: white; padding: 20px; border-radius: 10px; margin-bottom: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
+                        <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 15px;">
+                            <div>
+                                <h3 style="margin: 0 0 5px 0;">Order #${order.order_number}</h3>
+                                <p style="margin: 0; color: #666; font-size: 0.9rem;">
+                                    Customer: ${order.customer_email}
+                                </p>
+                                <p style="margin: 0; color: #666; font-size: 0.9rem;">
+                                    ${formatSATime(new Date(order.created_at))}
+                                </p>
+                            </div>
+                            <div>
+                                <select class="form-input order-status-select" data-order-id="${order.id}" style="margin-bottom: 10px;">
+                                    <option value="waiting" ${order.status === 'waiting' ? 'selected' : ''}>Waiting</option>
+                                    <option value="preparing" ${order.status === 'preparing' ? 'selected' : ''}>Preparing</option>
+                                    <option value="ready" ${order.status === 'ready' ? 'selected' : ''}>Ready</option>
+                                    <option value="cancelled" ${order.status === 'cancelled' ? 'selected' : ''}>Cancelled</option>
+                                </select>
+                                <button class="btn-danger btn-small" onclick="cancelOrder(${order.id})" 
+                                        ${order.status === 'cancelled' ? 'disabled' : ''}>
+                                    Cancel Order
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div style="margin-bottom: 15px;">
+                            ${order.items.map(item => `
+                                <div style="display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid #f0f0f0;">
+                                    <span>${item.name} × ${item.quantity}</span>
+                                    <span>R${(parseFloat(item.price) * item.quantity).toFixed(2)}</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                        
+                        <div style="display: flex; justify-content: space-between; font-weight: bold;">
+                            <span>Total Amount:</span>
+                            <span>R${parseFloat(order.total_amount).toFixed(2)}</span>
+                        </div>
+                        
+                        <div style="margin-top: 10px; font-size: 0.9rem; color: #666;">
+                            <div><strong>Collection:</strong> ${order.collection_method}</div>
+                            <div><strong>Payment:</strong> ${order.payment_method}</div>
+                            ${order.scheduled_time ? `
+                                <div><strong>Scheduled for:</strong> ${new Date(order.scheduled_time).toLocaleString()}</div>
+                            ` : ''}
+                        </div>
+                    </div>
+                `).join('') : `
+                    <div class="empty-state">
+                        <i class="fas fa-receipt"></i>
+                        <p>No orders yet</p>
+                    </div>
+                `}
+            </div>
+        `;
+        
+        ordersSection.querySelectorAll('.order-status-select').forEach(select => {
+            select.addEventListener('change', function() {
+                updateOrderStatus(this.getAttribute('data-order-id'), this.value);
+            });
+        });
+        
+        return ordersSection;
+        
+    } catch (error) {
+        console.error("Error loading shop orders:", error);
+        const errorSection = document.createElement('div');
+        errorSection.innerHTML = `
+            <div class="empty-state">
+                <i class="fas fa-exclamation-triangle"></i>
+                <p>Error loading orders</p>
+            </div>
+        `;
+        return errorSection;
+    }
+}
+
+async function updateOrderStatus(orderId, newStatus) {
+    try {
+        const { error } = await supabase
+            .from('orders')
+            .update({ 
+                status: newStatus,
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', orderId);
+        
+        if (error) throw error;
+        
+        showToast(`Order status updated to ${newStatus}`);
+        await loadShopOrders();
+        await loadShopStats();
+        
+    } catch (error) {
+        console.error("Error updating order status:", error);
+        showToast('Error updating order status', 'error');
+    }
+}
+
+async function cancelShopOrder(orderId) {
+    if (!confirm('Are you sure you want to cancel this order?')) {
+        return;
+    }
+    
+    try {
+        const { error } = await supabase
+            .from('orders')
+            .update({ 
+                status: 'cancelled',
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', orderId);
+        
+        if (error) throw error;
+        
+        showToast('Order cancelled successfully!');
+        await loadShopOrders();
+        await loadShopStats();
+        
+    } catch (error) {
+        console.error("Error cancelling order:", error);
+        showToast('Error cancelling order', 'error');
+    }
+}
+
+async function cancelOrder(orderId) {
+    if (!confirm('Are you sure you want to cancel this order?')) {
+        return;
+    }
+    
+    try {
+        const { error } = await supabase
+            .from('orders')
+            .update({ status: 'cancelled' })
+            .eq('id', orderId);
+        
+        if (error) throw error;
+        
+        showToast('Order cancelled!');
+        await loadShopAdminSection('shop-orders');
+        
+    } catch (error) {
+        console.error("Error cancelling order:", error);
+        showToast('Error cancelling order', 'error');
+    }
+}
+
+function showProfileSkeleton() {
+    const mainContent = document.getElementById('main-content');
+    mainContent.innerHTML = `
+        <div class="profile-container">
+            <div class="skeleton-profile-card">
+                <div class="skeleton-profile-header"></div>
+                <div class="skeleton-avatar"></div>
+                <div class="skeleton-profile-name"></div>
+                <div class="skeleton-profile-email"></div>
+                <div class="skeleton-profile-field"></div>
+                <div class="skeleton-profile-field"></div>
+                <div class="skeleton-profile-field"></div>
+                <div class="skeleton-profile-button"></div>
+                <div class="skeleton-profile-button"></div>
+            </div>
+        </div>
+    `;
+}
+
+
+async function showUserProfile() {
+    setHeaderVisibility(true);
+
+    showProfileSkeleton();
+
+    showLoading('Loading profile...');
+    if (!currentUser) return;
+    
+    try {
+        const { data: profile, error } = await supabase
+            .from('user_profiles')
+            .select('*')
+            .eq('customer_email', currentUser.email)
+            .single();
+        
+        if (error && error.code !== 'PGRST116') { 
+            throw error;
+        }
+        
+        const registeredShops = await getUserRegisteredShops(currentUser.email);
+        
+        const mainContent = document.getElementById('main-content');
+        mainContent.innerHTML = `
+    <style>
+        .profile-container {
+            padding: 20px;
+            margin-top: 70px;
+            margin-bottom: 80px;
+            max-width: 500px;
+            margin-left: auto;
+            margin-right: auto;
+            animation: fadeSlideUp 0.4s ease;
+        }
+        
+        @keyframes fadeSlideUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .profile-card {
+            background: white;
+            border-radius: 28px;
+            overflow: hidden;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+            border: 1px solid #f0f0f0;
+        }
+        
+        .profile-header {
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            padding: 32px 24px;
+            text-align: center;
+            position: relative;
+        }
+        
+        .profile-avatar {
+            width: 88px;
+            height: 88px;
+            background: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 16px;
+            border: 4px solid rgba(255, 255, 255, 0.4);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+            position: relative;
+            z-index: 2;
+        }
+        
+        .profile-avatar img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 50%;
+        }
+        
+        .profile-avatar i {
+            font-size: 44px;
+            color: var(--primary);
+        }
+        
+        .profile-header h2 {
+            margin: 0;
+            color: white;
+            font-size: 22px;
+            font-weight: 700;
+            position: relative;
+            z-index: 2;
+        }
+        
+        .profile-header p {
+            margin: 6px 0 0;
+            color: rgba(255, 255, 255, 0.9);
+            font-size: 14px;
+            position: relative;
+            z-index: 2;
+        }
+        
+        .customer-id-card {
+            background: #f8fafc;
+            margin: 20px 24px 0;
+            padding: 16px 20px;
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            border: 1px solid #eef2f6;
+        }
+        
+        .customer-id-card i {
+            font-size: 28px;
+            color: var(--primary);
+            opacity: 0.7;
+        }
+        
+        .customer-id-info {
+            flex: 1;
+        }
+        
+        .customer-id-label {
+            font-size: 11px;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+        }
+        
+        .customer-id-value {
+            font-family: 'Courier New', monospace;
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--primary);
+            letter-spacing: 0.5px;
+        }
+        
+        .profile-form {
+            padding: 24px;
+        }
+        
+        .form-group-profile {
+            margin-bottom: 20px;
+        }
+        
+        .form-label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+            color: #334155;
+            font-size: 13px;
+            font-weight: 600;
+        }
+        
+        .form-label i {
+            color: var(--primary);
+            font-size: 14px;
+            width: 18px;
+        }
+        
+        .form-input-profile {
+            width: 100%;
+            padding: 14px 16px;
+            border: 1px solid #e2e8f0;
+            border-radius: 16px;
+            font-size: 15px;
+            transition: all 0.2s;
+            background: white;
+            font-family: inherit;
+            box-sizing: border-box;
+        }
+        
+        .form-input-profile:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(255, 123, 49, 0.08);
+        }
+        
+        .form-input-profile[readonly] {
+            background: #f8fafc;
+            color: #1e293b;
+            cursor: not-allowed;
+        }
+        
+        .form-textarea-profile {
+            width: 100%;
+            padding: 14px 16px;
+            border: 1px solid #e2e8f0;
+            border-radius: 16px;
+            font-size: 15px;
+            resize: vertical;
+            min-height: 90px;
+            font-family: inherit;
+            box-sizing: border-box;
+        }
+        
+        .form-textarea-profile:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(255, 123, 49, 0.08);
+        }
+        
+        .input-hint {
+            margin-top: 6px;
+            font-size: 11px;
+            color: #94a3b8;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        .input-hint i {
+            font-size: 11px;
+        }
+        
+        .shop-switch-section {
+            background: #f8fafc;
+            border-radius: 20px;
+            padding: 20px;
+            margin: 0 24px 24px;
+            border: 1px solid #eef2f6;
+        }
+        
+        .shop-switch-title {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 16px;
+            color: #1e293b;
+            font-size: 14px;
+            font-weight: 600;
+        }
+        
+        .shop-switch-title i {
+            color: var(--primary);
+            font-size: 16px;
+        }
+        
+        .shop-switch-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        
+        .shop-switch-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 14px 16px;
+            background: white;
+            border-radius: 16px;
+            border: 1px solid #e9ecef;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .shop-switch-item:hover {
+            transform: translateY(-1px);
+            border-color: var(--primary);
+            box-shadow: 0 4px 12px rgba(255, 123, 49, 0.1);
+        }
+        
+        .shop-switch-item.active {
+            border: 1px solid var(--primary);
+            background: rgba(255, 123, 49, 0.03);
+        }
+        
+        .shop-info h4 {
+            margin: 0 0 4px;
+            font-size: 15px;
+            font-weight: 600;
+            color: #1e293b;
+        }
+        
+        .shop-info p {
+            margin: 0;
+            font-size: 11px;
+            color: #64748b;
+        }
+        
+        .current-badge {
+            background: var(--primary);
+            color: white;
+            padding: 4px 12px;
+            border-radius: 30px;
+            font-size: 10px;
+            font-weight: 600;
+        }
+        
+        .action-buttons-profile {
+            display: flex;
+            gap: 12px;
+            margin: 24px 24px 0;
+        }
+        
+        .btn-save-profile {
+            flex: 1;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            color: white;
+            border: none;
+            padding: 14px;
+            border-radius: 40px;
+            font-weight: 600;
+            font-size: 15px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: all 0.2s;
+        }
+        
+        .btn-save-profile:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 16px rgba(255, 123, 49, 0.25);
+        }
+        
+        .btn-back-profile {
+            flex: 1;
+            background: #f1f5f9;
+            color: #475569;
+            border: none;
+            padding: 14px;
+            border-radius: 40px;
+            font-weight: 600;
+            font-size: 15px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: all 0.2s;
+        }
+        
+        .btn-back-profile:hover {
+            background: #e2e8f0;
+            color: #1e293b;
+        }
+        
+        .logout-section-profile {
+            margin: 20px 24px 24px;
+            padding-top: 16px;
+            border-top: 1px solid #eef2f6;
+        }
+        
+        .btn-logout-profile {
+            width: 100%;
+            background: #fef2f2;
+            color: #dc2626;
+            border: 1px solid #fee2e2;
+            padding: 14px;
+            border-radius: 40px;
+            font-weight: 600;
+            font-size: 15px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: all 0.2s;
+        }
+        
+        .btn-logout-profile:hover {
+            background: #fee2e2;
+            transform: translateY(-1px);
+        }
+        
+        .profile-footer {
+            margin: 0 24px 24px;
+            text-align: center;
+            padding-top: 16px;
+        }
+        
+        .last-updated {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 16px;
+            background: #f8fafc;
+            border-radius: 40px;
+            font-size: 11px;
+            color: #64748b;
+        }
+        
+        .last-updated i {
+            color: var(--primary);
+            font-size: 11px;
+        }
+        
+        @media (max-width: 480px) {
+            .profile-container {
+                padding: 16px;
+                margin-top: 65px;
+            }
+            
+            .profile-header {
+                padding: 28px 20px;
+            }
+            
+            .profile-avatar {
+                width: 80px;
+                height: 80px;
+            }
+            
+            .profile-avatar i {
+                font-size: 40px;
+            }
+            
+            .profile-header h2 {
+                font-size: 20px;
+            }
+            
+            .profile-form {
+                padding: 20px;
+            }
+            
+            .customer-id-card {
+                margin: 16px 20px 0;
+                padding: 14px 16px;
+            }
+            
+            .shop-switch-section,
+            .action-buttons-profile,
+            .logout-section-profile,
+            .profile-footer {
+                margin-left: 20px;
+                margin-right: 20px;
+            }
+        }
+    </style>
+    
+    <div class="profile-container">
+        <div class="profile-card">
+            <div class="profile-header">
+                <div class="profile-avatar">
+                    ${getUserProfileImage(currentUser) ? 
+                        `<img src="${getUserProfileImage(currentUser)}" alt="Profile">` : 
+                        `<i class="fas fa-user-circle"></i>`
+                    }
+                </div>
+                <h2>${currentUser.user_metadata?.full_name || currentUser.displayName || ''}</h2>
+                <p>${currentUser.email}</p>
+            </div>
+            
+            <div class="customer-id-card">
+                <i class="fas fa-id-card"></i>
+                <div class="customer-id-info">
+                    <div class="customer-id-label">Customer ID</div>
+                    <div class="customer-id-value">${profile?.customer_id || await generateUniqueCustomerId()}</div>
+                </div>
+            </div>
+            
+            <form id="profile-form" class="profile-form">
+                <div class="form-group-profile">
+                    <div class="form-label">
+                        <i class="fas fa-user"></i>
+                        <span>Full Name</span>
+                    </div>
+                    <input type="text" class="form-input-profile" id="full-name" 
+                           value="${escapeHtml(profile?.full_name || '')}" 
+                           placeholder="Enter your full name" required>
+                    <div class="input-hint">
+                        <i class="fas fa-info-circle"></i>
+                        As it appears on your ID
+                    </div>
+                </div>
+                
+                <div class="form-group-profile">
+                    <div class="form-label">
+                        <i class="fas fa-phone-alt"></i>
+                        <span>Phone Number</span>
+                    </div>
+                    <input type="tel" class="form-input-profile" id="phone-number" 
+                           value="${escapeHtml(profile?.phone_number || '')}" 
+                           placeholder="+27 XX XXX XXXX" required>
+                    <div class="input-hint">
+                        <i class="fas fa-info-circle"></i>
+                        For delivery updates
+                    </div>
+                </div>
+                
+                <div class="form-group-profile">
+                    <div class="form-label">
+                        <i class="fas fa-envelope"></i>
+                        <span>Email Address</span>
+                    </div>
+                    <input type="email" class="form-input-profile" value="${currentUser.email}" readonly>
+                    <div class="input-hint">
+                        <i class="fas fa-lock"></i>
+                        Used for login (cannot be changed)
+                    </div>
+                </div>
+                
+                <div class="form-group-profile">
+                    <div class="form-label">
+                        <i class="fas fa-map-marker-alt"></i>
+                        <span>Delivery Address</span>
+                    </div>
+                    <textarea class="form-textarea-profile" id="address" 
+                              placeholder="Stand number, street name, suburb, city" 
+                              rows="3" required>${escapeHtml(profile?.address || '')}</textarea>
+                    <div class="input-hint">
+                        <i class="fas fa-info-circle"></i>
+                        Your default delivery location
+                    </div>
+                </div>
+                
+                <div class="action-buttons-profile">
+                    <button type="submit" class="btn-save-profile">
+                        <i class="fas fa-check-circle"></i>
+                        ${profile ? 'Update' : 'Create'}
+                    </button>
+                    <button type="button" class="btn-back-profile" id="cancel-profile-btn">
+                        <i class="fas fa-arrow-left"></i>
+                        Back
+                    </button>
+                </div>
+            </form>
+            
+            ${registeredShops.length > 1 ? `
+                <div class="shop-switch-section">
+                    <div class="shop-switch-title">
+                        <i class="fas fa-store-alt"></i>
+                        <span>Switch Shop</span>
+                    </div>
+                    <div class="shop-switch-list">
+                        ${registeredShops.map(shop => `
+                            <div class="shop-switch-item ${shop.id === currentShop?.id ? 'active' : ''}" 
+                                 data-shop-id="${shop.id}">
+                                <div class="shop-info">
+                                    <h4>${escapeHtml(shop.name)}</h4>
+                                    <p>${escapeHtml(shop.address || 'No address')}</p>
+                                </div>
+                                ${shop.id === currentShop?.id ? 
+                                    '<span class="current-badge">Current</span>' : 
+                                    '<i class="fas fa-chevron-right" style="color: #94a3b8;"></i>'
+                                }
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            ` : ''}
+            
+            <div class="logout-section-profile">
+                <button class="btn-logout-profile" id="logout-profile-btn">
+                    <i class="fas fa-sign-out-alt"></i>
+                    Sign Out
+                </button>
+            </div>
+            
+            ${profile?.updated_at ? `
+                <div class="profile-footer">
+                    <div class="last-updated">
+                        <i class="fas fa-clock"></i>
+                        Last updated: ${new Date(profile.updated_at).toLocaleDateString('en-ZA', {
+                            day: 'numeric',
+                            month: 'short',
+                            year: 'numeric'
+                        })}
+                    </div>
+                </div>
+            ` : ''}
+        </div>
+    </div>
+`;
+        
+        document.getElementById('profile-form').addEventListener('submit', saveUserProfile);
+        document.getElementById('cancel-profile-btn').addEventListener('click', () => {
+            showMenuPage();
+        });
+        
+        document.getElementById('logout-profile-btn').addEventListener('click', () => {
+            if (confirm('Are you sure you want to logout?')) {
+                signOutUser();
+            }
+        });
+        
+        if (registeredShops.length > 1) {
+            document.querySelectorAll('.shop-switch-item').forEach(item => {
+                item.addEventListener('click', async function() {
+                    const shopId = this.getAttribute('data-shop-id');
+                    if (shopId !== currentShop?.id) {
+                        currentShop = registeredShops.find(shop => shop.id == shopId);
+                        showToast(`Switched to ${currentShop.name}`);
+                        await showMenuPage();
+                    }
+                });
+            });
+        }
+        
+        document.getElementById('bottom-nav').style.display = 'flex';
+        
+    } catch (error) {
+        console.error("Error loading user profile:", error);
+        showToast('Error loading profile', 'error');
+    }
+
+    setTimeout(hideLoading, 300);
+}
+
+function generateCustomerId() {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let result = 'CA-';
+    for (let i = 0; i < 4; i++) {
+        result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return result;
+}
+
+async function saveUserProfile(event) {
+    event.preventDefault();
+    
+    if (!currentUser) return;
+    
+    const fullName = document.getElementById('full-name').value.trim();
+    const phoneNumber = document.getElementById('phone-number').value.trim();
+    const address = document.getElementById('address').value.trim();
+    
+    let customerId = null;
+    const customerIdElement = document.getElementById('customer-id');
+    if (customerIdElement) {
+        customerId = customerIdElement.value;
+    }
+    
+    if (!fullName) {
+        alert('Please enter your full name');
+        return;
+    }
+    
+    if (!phoneNumber) {
+        alert('Please enter your phone number');
+        return;
+    }
+    
+    if (!address) {
+        alert('Please enter your delivery address');
+        return;
+    }
+    
+    try {
+        const { data: existingProfile, error: checkError } = await supabase
+            .from('user_profiles')
+            .select('id, customer_id')
+            .eq('customer_email', currentUser.email)
+            .single();
+        
+        let saveError;
+        
+        if (existingProfile) {
+            const { error } = await supabase
+                .from('user_profiles')
+                .update({
+                    full_name: fullName,
+                    phone_number: phoneNumber,
+                    address: address,
+                    updated_at: new Date().toISOString()
+                })
+                .eq('customer_email', currentUser.email);
+            
+            saveError = error;
+        } else {
+            if (!customerId) {
+                customerId = await generateUniqueCustomerId();
+            }
+            
+            const { error } = await supabase
+                .from('user_profiles')
+                .insert([{
+                    customer_email: currentUser.email,
+                    customer_id: customerId,
+                    full_name: fullName,
+                    phone_number: phoneNumber,
+                    address: address
+                }]);
+            
+            saveError = error;
+        }
+        
+        if (saveError) throw saveError;
+        
+        showToast('Profile saved successfully!');
+        
+        setTimeout(() => {
+            showMenuPage();
+        }, 1500);
+        
+    } catch (error) {
+        console.error("Error saving user profile:", error);
+        showToast('Error saving profile: ' + (error.message || 'Unknown error'), 'error');
+    }
+}
+
+async function generateUniqueCustomerId() {
+    let customerId;
+    let isUnique = false;
+    let attempts = 0;
+    
+    while (!isUnique && attempts < 10) {
+        customerId = generateCustomerId();
+        
+        const { data: existingProfile, error } = await supabase
+            .from('user_profiles')
+            .select('customer_id')
+            .eq('customer_id', customerId)
+            .single();
+        
+        if (error && error.code === 'PGRST116') { 
+            isUnique = true;
+        } else if (!error) {
+            attempts++;
+        } else {
+            isUnique = true;
+        }
+    }
+    
+    return customerId;
+}
+
+function updateHeaderText(shop = null) {
+    const headerLogo = document.querySelector('.app-logo span');
+    const appLogo = document.querySelector('.app-logo');
+    
+    if (!headerLogo || !appLogo) return;
+    
+    if (!shop) {
+        headerLogo.textContent = 'Fasfood';
+    } else {
+        let shopName = shop.name || '';
+        
+        if (shopName.length > 15) {
+            shopName = shopName.substring(0, 15) + '...';
+        }
+        
+        headerLogo.textContent = shopName;
+    }
+    
+    appLogo.style.background = 'none';
+    appLogo.style.webkitBackgroundClip = 'unset';
+    appLogo.style.webkitTextFillColor = 'white';
+    appLogo.style.color = 'white';
+}
+
+async function generateShopReport(period = 'today') {
+    if (!currentShop) {
+        showToast('No shop selected', 'error');
+        return;
+    }
+    
+    try {
+        showLoading('Generating PDF report...');
+        
+        let startDate, endDate;
+        const now = new Date();
+        
+        switch(period) {
+            case 'today':
+                startDate = new Date(now.setHours(0, 0, 0, 0));
+                endDate = new Date(now.setHours(23, 59, 59, 999));
+                break;
+            case 'yesterday':
+                const yesterday = new Date(now);
+                yesterday.setDate(yesterday.getDate() - 1);
+                startDate = new Date(yesterday.setHours(0, 0, 0, 0));
+                endDate = new Date(yesterday.setHours(23, 59, 59, 999));
+                break;
+            case 'week':
+                startDate = new Date(now.setDate(now.getDate() - now.getDay()));
+                startDate.setHours(0, 0, 0, 0);
+                endDate = new Date();
+                break;
+            case 'month':
+                startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+                endDate = new Date();
+                break;
+            case 'custom':
+                const startInput = document.getElementById('report-start-date')?.value;
+                const endInput = document.getElementById('report-end-date')?.value;
+                if (startInput && endInput) {
+                    startDate = new Date(startInput + 'T00:00:00');
+                    endDate = new Date(endInput + 'T23:59:59');
+                } else {
+                    startDate = new Date(now.setHours(0, 0, 0, 0));
+                    endDate = new Date();
+                }
+                break;
+            case 'all':
+            default:
+                startDate = null;
+                endDate = null;
+                break;
+        }
+        
+        let query = supabase
+            .from('orders')
+            .select('*')
+            .eq('shop_id', currentShop.id)
+            .order('created_at', { ascending: false });
+        
+        if (startDate && endDate) {
+            query = query
+                .gte('created_at', startDate.toISOString())
+                .lte('created_at', endDate.toISOString());
+        }
+        
+        const { data: orders, error } = await query;
+        
+        if (error) throw error;
+        
+        const { count: customersCount, error: customersError } = await supabase
+            .from('customer_registrations')
+            .select('*', { count: 'exact', head: true })
+            .eq('shop_id', currentShop.id);
+        
+        if (customersError) throw customersError;
+        
+        const totalOrders = orders?.length || 0;
+        const completedOrders = orders?.filter(order => order.status === 'completed').length || 0;
+        const cancelledOrders = orders?.filter(order => order.status === 'cancelled').length || 0;
+        const pendingOrders = orders?.filter(order => ['waiting', 'preparing', 'ready'].includes(order.status)).length || 0;
+        
+        const totalRevenue = orders
+            ?.filter(order => order.status !== 'cancelled')
+            .reduce((sum, order) => sum + parseFloat(order.total_amount), 0) || 0;
+        
+        const validOrders = orders?.filter(order => order.status !== 'cancelled') || [];
+        const averageOrderValue = validOrders.length > 0 ? totalRevenue / validOrders.length : 0;
+        
+        const itemSales = {};
+        orders?.forEach(order => {
+            if (order.status !== 'cancelled' && order.items) {
+                order.items.forEach(item => {
+                    const itemName = item.name || `Item #${item.id}`;
+                    if (!itemSales[itemName]) {
+                        itemSales[itemName] = {
+                            quantity: 0,
+                            revenue: 0
+                        };
+                    }
+                    itemSales[itemName].quantity += item.quantity || 1;
+                    itemSales[itemName].revenue += (parseFloat(item.price) * (item.quantity || 1));
+                });
+            }
+        });
+        
+        const topItems = Object.entries(itemSales)
+            .sort((a, b) => b[1].quantity - a[1].quantity)
+            .slice(0, 5);
+        
+        const dailySales = {};
+        const last7Days = [];
+        for (let i = 6; i >= 0; i--) {
+            const date = new Date();
+            date.setDate(date.getDate() - i);
+            const dateStr = date.toISOString().split('T')[0];
+            last7Days.push(dateStr);
+            dailySales[dateStr] = 0;
+        }
+        
+        orders?.forEach(order => {
+            if (order.status !== 'cancelled') {
+                const orderDate = new Date(order.created_at).toISOString().split('T')[0];
+                if (dailySales[orderDate] !== undefined) {
+                    dailySales[orderDate] += parseFloat(order.total_amount);
+                }
+            }
+        });
+        
+        await generatePDF({
+            shop: currentShop,
+            period: period,
+            startDate: startDate,
+            endDate: endDate,
+            stats: {
+                totalOrders,
+                completedOrders,
+                cancelledOrders,
+                pendingOrders,
+                totalRevenue,
+                averageOrderValue,
+                customersCount: customersCount || 0
+            },
+            topItems,
+            dailySales: last7Days.map(date => ({
+                date,
+                amount: dailySales[date]
+            })),
+            orders: orders || []
+        });
+        
+        hideLoading();
+        showToast('PDF report generated successfully!');
+        
+    } catch (error) {
+        console.error("Error generating report:", error);
+        hideLoading();
+        showToast('Error generating report: ' + error.message, 'error');
+    }
+}
+
+async function generatePDF(data) {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    
+    const primaryColor = [255, 123, 49]; 
+    const secondaryColor = [255, 170, 83]; 
+    const textColor = [45, 45, 45]; 
+    
+    doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+    doc.rect(0, 0, 210, 40, 'F');
+    
+    doc.setFillColor(secondaryColor[0], secondaryColor[1], secondaryColor[2], 0.3);
+    doc.rect(0, 0, 210, 40, 'F');
+    
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(24);
+    doc.setFont('helvetica', 'bold');
+    doc.text(data.shop.name, 105, 20, { align: 'center' });
+    
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'normal');
+    doc.text('Sales & Performance Report', 105, 32, { align: 'center' });
+    
+    doc.setTextColor(100, 100, 100);
+    doc.setFontSize(10);
+    let periodText = '';
+    switch(data.period) {
+        case 'today': periodText = 'Today'; break;
+        case 'yesterday': periodText = 'Yesterday'; break;
+        case 'week': periodText = 'This Week'; break;
+        case 'month': periodText = 'This Month'; break;
+        case 'custom': periodText = `${data.startDate?.toLocaleDateString() || 'N/A'} - ${data.endDate?.toLocaleDateString() || 'N/A'}`; break;
+        default: periodText = 'All Time';
+    }
+    doc.text(`Period: ${periodText}`, 105, 45, { align: 'center' });
+    
+    doc.setTextColor(150, 150, 150);
+    doc.setFontSize(8);
+    doc.text(`Generated: ${new Date().toLocaleString('en-ZA', { timeZone: 'Africa/Johannesburg' })}`, 105, 52, { align: 'center' });
+    
+    doc.setFontSize(9);
+    doc.setTextColor(80, 80, 80);
+    doc.text(`Phone: ${data.shop.phone_number || 'N/A'} | Email: ${data.shop.email || 'N/A'}`, 105, 60, { align: 'center' });
+    doc.text(`Address: ${data.shop.address || 'N/A'}`, 105, 66, { align: 'center' });
+    
+    doc.setDrawColor(200, 200, 200);
+    doc.line(20, 72, 190, 72);
+    
+    let yPos = 80;
+    
+    doc.setFontSize(16);
+    doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Key Metrics', 20, yPos);
+    yPos += 8;
+    
+    doc.setFillColor(248, 249, 250);
+    doc.roundedRect(20, yPos, 80, 30, 3, 3, 'F');
+    doc.setFontSize(20);
+    doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`R${data.stats.totalRevenue.toFixed(2)}`, 25, yPos + 18);
+    doc.setFontSize(10);
+    doc.setTextColor(100, 100, 100);
+    doc.setFont('helvetica', 'normal');
+    doc.text('Total Revenue', 25, yPos + 25);
+    
+    doc.setFillColor(248, 249, 250);
+    doc.roundedRect(110, yPos, 80, 30, 3, 3, 'F');
+    doc.setFontSize(20);
+    doc.setTextColor(23, 162, 184);
+    doc.setFont('helvetica', 'bold');
+    doc.text(data.stats.totalOrders.toString(), 115, yPos + 18);
+    doc.setFontSize(10);
+    doc.setTextColor(100, 100, 100);
+    doc.setFont('helvetica', 'normal');
+    doc.text('Total Orders', 115, yPos + 25);
+    
+    yPos += 40;
+    
+    doc.setFillColor(248, 249, 250);
+    doc.roundedRect(20, yPos, 80, 30, 3, 3, 'F');
+    doc.setFontSize(20);
+    doc.setTextColor(40, 167, 69);
+    doc.setFont('helvetica', 'bold');
+    doc.text(data.stats.completedOrders.toString(), 25, yPos + 18);
+    doc.setFontSize(10);
+    doc.setTextColor(100, 100, 100);
+    doc.setFont('helvetica', 'normal');
+    doc.text('Completed', 25, yPos + 25);
+    
+    doc.setFillColor(248, 249, 250);
+    doc.roundedRect(110, yPos, 80, 30, 3, 3, 'F');
+    doc.setFontSize(20);
+    doc.setTextColor(255, 193, 7);
+    doc.setFont('helvetica', 'bold');
+    doc.text(data.stats.customersCount.toString(), 115, yPos + 18);
+    doc.setFontSize(10);
+    doc.setTextColor(100, 100, 100);
+    doc.setFont('helvetica', 'normal');
+    doc.text('Customers', 115, yPos + 25);
+    
+    yPos += 45;
+    
+    doc.setFontSize(14);
+    doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Additional Statistics', 20, yPos);
+    yPos += 8;
+    
+    const statsData = [
+        ['Pending Orders:', data.stats.pendingOrders.toString()],
+        ['Cancelled Orders:', data.stats.cancelledOrders.toString()],
+        ['Average Order Value:', `R${data.stats.averageOrderValue.toFixed(2)}`],
+        ['Completion Rate:', data.stats.totalOrders > 0 
+            ? `${((data.stats.completedOrders / data.stats.totalOrders) * 100).toFixed(1)}%` 
+            : '0%']
+    ];
+    
+    doc.setFontSize(11);
+    doc.setTextColor(80, 80, 80);
+    statsData.forEach((item, index) => {
+        doc.setFont('helvetica', 'bold');
+        doc.text(item[0], 25, yPos + (index * 7));
+        doc.setFont('helvetica', 'normal');
+        doc.text(item[1], 70, yPos + (index * 7));
+    });
+    
+    yPos += 35;
+    
+    if (data.topItems.length > 0) {
+        doc.setFontSize(14);
+        doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Top Selling Items', 20, yPos);
+        yPos += 8;
+        
+        doc.setFillColor(240, 240, 240);
+        doc.rect(20, yPos - 4, 170, 8, 'F');
+        doc.setFontSize(10);
+        doc.setTextColor(80, 80, 80);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Item Name', 25, yPos);
+        doc.text('Qty', 120, yPos);
+        doc.text('Revenue', 160, yPos);
+        
+        yPos += 4;
+        
+        data.topItems.forEach((item, index) => {
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(80, 80, 80);
+            
+            let itemName = item[0];
+            if (itemName.length > 25) {
+                itemName = itemName.substring(0, 22) + '...';
+            }
+            
+            doc.text(itemName, 25, yPos + (index * 6));
+            doc.text(item[1].quantity.toString(), 120, yPos + (index * 6));
+            doc.text(`R${item[1].revenue.toFixed(2)}`, 160, yPos + (index * 6));
+            
+            if (index % 2 === 0) {
+                doc.setFillColor(252, 252, 252);
+                doc.rect(20, yPos + (index * 6) - 3, 170, 6, 'F');
+            }
+        });
+        
+        yPos += (data.topItems.length * 6) + 15;
+    }
+    
+    if (yPos > 250) {
+        doc.addPage();
+        yPos = 20;
+    }
+    
+    if (data.orders.length > 0) {
+        doc.setFontSize(14);
+        doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Recent Orders', 20, yPos);
+        yPos += 8;
+        
+        const recentOrders = data.orders.slice(0, 10);
+        
+        doc.setFillColor(240, 240, 240);
+        doc.rect(20, yPos - 4, 170, 8, 'F');
+        doc.setFontSize(9);
+        doc.setTextColor(80, 80, 80);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Order #', 25, yPos);
+        doc.text('Customer', 65, yPos);
+        doc.text('Amount', 130, yPos);
+        doc.text('Status', 165, yPos);
+        
+        yPos += 4;
+        
+        recentOrders.forEach((order, index) => {
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(80, 80, 80);
+            doc.setFontSize(8);
+            
+            doc.text(order.order_number || 'N/A', 25, yPos + (index * 6));
+            
+            let customer = order.customer_email || order.customer_name || 'N/A';
+            if (customer.length > 20) customer = customer.substring(0, 17) + '...';
+            doc.text(customer, 65, yPos + (index * 6));
+            
+            doc.text(`R${parseFloat(order.total_amount).toFixed(2)}`, 130, yPos + (index * 6));
+            
+            const statusColor = getStatusColorForPDF(order.status);
+            doc.setTextColor(statusColor[0], statusColor[1], statusColor[2]);
+            doc.text(order.status || 'N/A', 165, yPos + (index * 6));
+            doc.setTextColor(80, 80, 80);
+            
+            if (index % 2 === 0) {
+                doc.setFillColor(252, 252, 252);
+                doc.rect(20, yPos + (index * 6) - 3, 170, 6, 'F');
+            }
+        });
+        
+        yPos += (recentOrders.length * 6) + 10;
+    }
+    
+    const pageCount = doc.internal.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        doc.setFontSize(8);
+        doc.setTextColor(150, 150, 150);
+        doc.text(`Page ${i} of ${pageCount}`, 105, 290, { align: 'center' });
+        doc.text(`Fasfood - Shop Report`, 105, 285, { align: 'center' });
+    }
+    
+    const fileName = `${data.shop.name.replace(/\s+/g, '_')}_Report_${new Date().toISOString().split('T')[0]}.pdf`;
+    doc.save(fileName);
+}
+
+function getStatusColorForPDF(status) {
+    const colors = {
+        'waiting': [23, 162, 184],    
+        'preparing': [255, 193, 7],   
+        'ready': [40, 167, 69],       
+        'completed': [108, 117, 125], 
+        'cancelled': [220, 53, 69]    
+    };
+    return colors[status] || [108, 117, 125];
+}
+
+function addReportButtonToDashboard() {
+    const shopDashboard = document.getElementById('shop-dashboard');
+    if (!shopDashboard) return;
+    
+    if (document.getElementById('generate-report-btn')) return;
+    
+    const filterContainer = shopDashboard.querySelector('#refresh-dashboard-btn')?.parentNode;
+    if (!filterContainer) return;
+    
+    const reportContainer = document.createElement('div');
+    reportContainer.style.cssText = 'display: flex; gap: 10px; margin-top: 10px;';
+    
+    reportContainer.innerHTML = `
+        <select id="report-period" class="form-input" style="flex: 2;">
+            <option value="today">Today</option>
+            <option value="yesterday">Yesterday</option>
+            <option value="week">This Week</option>
+            <option value="month">This Month</option>
+            <option value="all">All Time</option>
+            <option value="custom">Custom Range</option>
+        </select>
+        <button id="generate-report-btn" class="btn-primary" style="flex: 1; background: #28a745; border-color: #28a745;">
+            <i class="fas fa-file-pdf"></i> Generate PDF Report
+        </button>
+    `;
+    
+    const customDateContainer = document.createElement('div');
+    customDateContainer.id = 'report-custom-date-container';
+    customDateContainer.style.cssText = 'display: none; flex: 2; gap: 10px; margin-top: 10px;';
+    customDateContainer.innerHTML = `
+        <input type="date" id="report-start-date" class="form-input" style="flex: 1;">
+        <span style="align-self: center;">to</span>
+        <input type="date" id="report-end-date" class="form-input" style="flex: 1;">
+    `;
+    
+    filterContainer.parentNode.insertBefore(reportContainer, filterContainer.nextSibling);
+    filterContainer.parentNode.insertBefore(customDateContainer, reportContainer.nextSibling);
+    
+    document.getElementById('report-period').addEventListener('change', function() {
+        const customContainer = document.getElementById('report-custom-date-container');
+        customContainer.style.display = this.value === 'custom' ? 'flex' : 'none';
+    });
+    
+    document.getElementById('generate-report-btn').addEventListener('click', function() {
+        const period = document.getElementById('report-period').value;
+        generateShopReport(period);
+    });
+}
+
+const originalLoadShopAdminContent = loadShopAdminContent;
+loadShopAdminContent = function() {
+    originalLoadShopAdminContent.apply(this, arguments);
+    
+    setTimeout(() => {
+        addReportButtonToDashboard();
+    }, 500);
+};
+
+// window.addMenuItemForm = addMenuItemForm;
+// window.removeMenuItem = removeMenuItem;
+// window.addAddonField = addAddonField;
+// window.addNewAddonField = addNewAddonField;
+// window.editShopColors = editShopColors;
+// window.toggleShopSuspension = toggleShopSuspension;
+// window.editDevMenuItem = editDevMenuItem;
+// window.deleteDevMenuItem = deleteDevMenuItem;
+// window.deleteShop = deleteShop;
+
+        // Initialize the app
+        initApp();
+
+let lastScrollTop = 0;
+let scrollTimeout;
+const bottomNav = document.querySelector('.bottom-nav');
+
+function handleScroll() {
+    if (!bottomNav) return;
+    
+    const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+    
+    if (scrollTimeout) {
+        clearTimeout(scrollTimeout);
+    }
+    
+    if (scrollTop > lastScrollTop && scrollTop > 50) {
+
+        bottomNav.classList.add('hide');
+        bottomNav.classList.remove('show');
+    } else if (scrollTop < lastScrollTop) {
+
+        bottomNav.classList.remove('hide');
+        bottomNav.classList.add('show');
+    }
+    
+    scrollTimeout = setTimeout(() => {
+        if (bottomNav.classList.contains('hide')) {
+            bottomNav.classList.remove('hide');
+            bottomNav.classList.add('show');
+        }
+    }, 1500);
+    
+    lastScrollTop = scrollTop <= 0 ? 0 : scrollTop;
+}
+
+function throttle(func, limit) {
+    let inThrottle;
+    return function() {
+        const args = arguments;
+        const context = this;
+        if (!inThrottle) {
+            func.apply(context, args);
+            inThrottle = true;
+            setTimeout(() => inThrottle = false, limit);
+        }
+    }
+}
+
+window.addEventListener('scroll', throttle(handleScroll, 100));
+
+if (bottomNav) {
+    bottomNav.classList.add('show');
+}
+
+function ensureBottomNavVisible() {
+    const bottomNav = document.querySelector('.bottom-nav');
+    if (bottomNav && bottomNav.classList.contains('hide')) {
+        bottomNav.classList.remove('hide');
+        bottomNav.classList.add('show');
+    }
+    lastScrollTop = 0;
+}
+
+let isLoading = false;
+
+function showLoading(message = 'Loading...') {
+    if (isLoading) return;
+    isLoading = true;
+    
+    const loader = document.getElementById('global-loader');
+    const progress = document.getElementById('global-loader-progress');
+    const text = document.getElementById('global-loader-text');
+    
+    progress.style.width = '10%';
+    text.textContent = message;
+    loader.classList.add('active');
+    text.classList.add('active');
+    
+    setTimeout(() => { progress.style.width = '30%'; }, 100);
+    setTimeout(() => { progress.style.width = '60%'; }, 300);
+    setTimeout(() => { progress.style.width = '85%'; }, 600);
+}
+
+function hideLoading() {
+    if (!isLoading) return;
+    
+    const loader = document.getElementById('global-loader');
+    const progress = document.getElementById('global-loader-progress');
+    const text = document.getElementById('global-loader-text');
+    
+    progress.style.width = '100%';
+    
+    setTimeout(() => {
+        loader.classList.remove('active');
+        text.classList.remove('active');
+        
+        setTimeout(() => {
+            progress.style.width = '0%';
+            isLoading = false;
+        }, 300);
+    }, 300);
+}
+
+function stopOrderPageRefresh() {
+    if (orderRefreshInterval) {
+        clearInterval(orderRefreshInterval);
+        orderRefreshInterval = null;
+        console.log("Stopped order page refresh");
+    }
+}
+
+document.addEventListener('click', function(e) {
+    if (e.target.closest('.nav-item')) {
+        const navItem = e.target.closest('.nav-item');
+        const page = navItem.getAttribute('data-page');
+        
+        document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
+        navItem.classList.add('active');
+        
+        if (page !== 'orders') {
+            stopOrderPageRefresh();
+        }
+        
+        showLoading('Loading ' + page + '...');
+        
+        setTimeout(() => {
+            if (page === 'home') showMenuPage();
+            else if (page === 'orders') {
+                showOrdersPage();
+                startOrderPageRefresh();
+            }
+            else if (page === 'profile') {
+                showUserProfile();
+                stopOrderPageRefresh();
+            }
+            
+            setTimeout(hideLoading, 500);
+        }, 100);
+    }
+});
+
+function getSouthAfricaTime() {
+    return new Date(); 
+}
+
+function formatSATime(date) {
+    if (!date) return 'N/A';
+    
+    const inputDate = typeof date === 'string' ? new Date(date) : date;
+    
+    const day = inputDate.getDate().toString().padStart(2, '0');
+    const month = (inputDate.getMonth() + 1).toString().padStart(2, '0');
+    const year = inputDate.getFullYear();
+    const hours = inputDate.getHours().toString().padStart(2, '0');
+    const minutes = inputDate.getMinutes().toString().padStart(2, '0');
+    
+    return `${day}/${month}/${year}, ${hours}:${minutes}`;
+}
+
+function getSASTTimeString() {
+    const now = new Date();
+    const saTime = new Date(now.getTime() + (2 * 60 * 60 * 1000));
+    return saTime.toISOString();
+}
+
+function isDateInSAST(date) {
+    const inputDate = typeof date === 'string' ? new Date(date) : date;
+    const localHours = inputDate.getHours();
+    const utcHours = inputDate.getUTCHours();
+    
+    return localHours === (utcHours + 2);
+}
+
+function debugOrderTimes(order) {
+    console.log('=== ORDER TIME DEBUG ===');
+    console.log('Order created_at (raw):', order.created_at);
+    console.log('Order created_at (Date object):', new Date(order.created_at));
+    console.log('Order created_at (UTC):', new Date(order.created_at).toUTCString());
+    
+    const createdDate = new Date(order.created_at);
+    const saTime = new Date(createdDate.getTime() + (2 * 60 * 60 * 1000));
+    
+    console.log('SAST (UTC+2):', saTime);
+    console.log('Formatted SAST:', formatSATime(createdDate));
+    console.log('Simple SAST:', formatSATimeSimple(createdDate));
+    
+    console.log('Current local time:', new Date());
+    console.log('Current SAST:', getSouthAfricaTime());
+    console.log('=== END DEBUG ===');
+}
+
+function formatSATimeSimple(date) {
+    if (!date) return 'N/A';
+    
+    const inputDate = typeof date === 'string' ? new Date(date) : date;
+    const saTime = new Date(inputDate.getTime() + (2 * 60 * 60 * 1000));
+    
+    return saTime.toLocaleString('en-ZA', {
+        timeZone: 'Africa/Johannesburg',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+    });
+}
+
+
+function toSATimeString(date) {
+    const saTime = new Date(date.getTime() + (2 * 60 * 60 * 1000));
+    return saTime.toLocaleTimeString('en-ZA', {
+        timeZone: 'Africa/Johannesburg',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+    });
+}
+
+function toSADateString(date) {
+    const saTime = new Date(date.getTime() + (2 * 60 * 60 * 1000));
+    return saTime.toLocaleDateString('en-ZA', {
+        timeZone: 'Africa/Johannesburg',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+    });
+}
+
+function testTimeZoneFunctions() {
+    console.log('Testing SAST Time Functions:');
+    console.log('Current UTC time:', new Date().toISOString());
+    console.log('SAST time:', getSouthAfricaTime().toISOString());
+    console.log('Formatted SAST:', formatSATime(new Date()));
+    console.log('SAST Time only:', toSATimeString(new Date()));
+    console.log('SAST Date only:', toSADateString(new Date()));
+    
+    const testTime = new Date();
+    testTime.setHours(testTime.getHours() + 4);
+    console.log('Scheduled time test:', formatSATime(testTime));
+}
+
+window.deleteShop = async function(shopId) {
+    if (!confirm('Are you sure you want to delete this shop? This action cannot be undone.')) {
+        return;
+    }
+    
+    try {
+        const { data: shop, error: shopError } = await supabase
+            .from('shops')
+            .select('name')
+            .eq('id', shopId)
+            .single();
+        
+        if (shopError) throw shopError;
+        
+        if (!confirm(`Are you absolutely sure you want to delete "${shop.name}"? This will permanently delete:\n\n• All menu items and addons\n• All orders\n• All customer registrations\n• All shop admins\n• All notifications/reminders`)) {
+            return;
+        }
+        
+        showLoading('Deleting shop and all related data...');
+
+        const { error: ordersError } = await supabase
+            .from('orders')
+            .delete()
+            .eq('shop_id', shopId);
+        
+        if (ordersError) throw ordersError;
+        
+        const { error: regError } = await supabase
+            .from('customer_registrations')
+            .delete()
+            .eq('shop_id', shopId);
+        
+        if (regError) throw regError;
+        
+        const { error: adminError } = await supabase
+            .from('shop_admins')
+            .delete()
+            .eq('shop_id', shopId);
+        
+        if (adminError) throw adminError;
+        
+        const { error: reminderError } = await supabase
+            .from('shop_reminders')
+            .delete()
+            .eq('shop_id', shopId);
+        
+        if (reminderError) throw reminderError;
+
+        const { data: menuItems, error: menuItemsError } = await supabase
+            .from('menu_items')
+            .select('id')
+            .eq('shop_id', shopId);
+        
+        if (menuItemsError) throw menuItemsError;
+        
+        if (menuItems && menuItems.length > 0) {
+            const menuItemIds = menuItems.map(item => item.id);
+            const { error: addonsError } = await supabase
+                .from('menu_item_addons')
+                .delete()
+                .in('menu_item_id', menuItemIds);
+            
+            if (addonsError) throw addonsError;
+        }
+        
+        const { error: menuError } = await supabase
+            .from('menu_items')
+            .delete()
+            .eq('shop_id', shopId);
+        
+        if (menuError) throw menuError;
+        
+        const { error: finalError } = await supabase
+            .from('shops')
+            .delete()
+            .eq('id', shopId);
+        
+        if (finalError) throw finalError;
+        
+        hideLoading();
+        showToast(`Shop "${shop.name}" has been deleted successfully!`);
+        
+        await loadAllShops();
+        await loadDevStats();
+        
+    } catch (error) {
+        console.error("Error deleting shop:", error);
+        hideLoading();
+        showToast('Error deleting shop: ' + error.message, 'error');
+        
+        if (error.code === '23503') {
+            alert('Cannot delete shop because it still has related data. Please try again or contact support.');
+        }
+    }
+};
+
+async function loadAdvertManagement() {
+    const shopSelect = document.getElementById('advert-shop-select');
+    shopSelect.innerHTML = '<option value="">Select a shop</option>' + 
+        allShops.map(shop => `<option value="${shop.id}">${shop.name}</option>`).join('');
+    
+        document.getElementById('advert-type').addEventListener('change', function() {
+            const shopSelectGroup = document.getElementById('advert-shop-select-group');
+            shopSelectGroup.style.display = this.value === 'specific_shop' ? 'block' : 'none';
+        });
+    
+    document.getElementById('create-advert-btn').addEventListener('click', createAdvert);
+    
+    await loadAdvertsList();
+}
+
+async function createAdvert() {
+    const title = document.getElementById('advert-title').value.trim();
+    const description = document.getElementById('advert-description').value.trim();
+    const imageUrl = document.getElementById('advert-image-url').value.trim();
+    const advertType = document.getElementById('advert-type').value;
+    const shopId = advertType === 'specific_shop' ? document.getElementById('advert-shop-select').value : null;
+    const delay = parseInt(document.getElementById('advert-delay').value) || 10;
+    const duration = parseInt(document.getElementById('advert-duration').value) || 10;
+    const priority = parseInt(document.getElementById('advert-priority').value) || 1;
+    const startDate = document.getElementById('advert-start-date').value;
+    const endDate = document.getElementById('advert-end-date').value;
+    
+    if (!title || !imageUrl) {
+        alert('Title and Image URL are required');
+        return;
+    }
+    
+    if (advertType === 'specific_shop' && !shopId) {
+        alert('Please select a shop for specific shop advert');
+        return;
+    }
+    
+    try {
+        if (!imageUrl.startsWith('http')) {
+            alert('Please enter a valid image URL starting with http:// or https://');
+            return;
+        }
+        
+        const advertData = {
+            title: title,
+            description: description,
+            image_url: imageUrl,
+            advert_type: advertType,
+            shop_id: shopId,
+            show_duration: duration,
+            display_delay: delay,
+            priority: priority,
+            created_by: currentUser.email,
+            starts_at: startDate ? new Date(startDate).toISOString() : new Date().toISOString(),
+            is_active: true
+        };
+        
+        if (endDate) {
+            advertData.ends_at = new Date(endDate).toISOString();
+        }
+        
+        const { data: advert, error } = await supabase
+            .from('adverts')
+            .insert([advertData])
+            .select()
+            .single();
+        
+        if (error) throw error;
+        
+        showToast('Advert created successfully!');
+        
+        document.getElementById('advert-title').value = '';
+        document.getElementById('advert-description').value = '';
+        document.getElementById('advert-image-url').value = '';
+        document.getElementById('advert-delay').value = '10';
+        document.getElementById('advert-duration').value = '10';
+        document.getElementById('advert-priority').value = '1';
+        document.getElementById('advert-start-date').value = '';
+        document.getElementById('advert-end-date').value = '';
+        
+        await loadAdvertsList();
+        
+    } catch (error) {
+        console.error("Error creating advert:", error);
+        alert('Error creating advert: ' + error.message);
+    }
+}
+
+async function loadAdvertsList() {
+    try {
+        const { data: adverts, error } = await supabase
+            .from('adverts')
+            .select('*, shops(name)')
+            .order('priority', { ascending: false })
+            .order('created_at', { ascending: false });
+        
+        if (error) throw error;
+        
+        const advertsList = document.getElementById('adverts-list');
+        
+        if (!adverts || adverts.length === 0) {
+            advertsList.innerHTML = `
+                <div class="empty-state">
+                    <i class="fas fa-ad"></i>
+                    <p>No adverts created yet</p>
+                </div>
+            `;
+            return;
+        }
+        
+        advertsList.innerHTML = adverts.map(advert => {
+            const now = new Date();
+            const startDate = new Date(advert.starts_at);
+            const endDate = advert.ends_at ? new Date(advert.ends_at) : null;
+            
+            let status = 'Active';
+            let statusClass = 'advert-status-active';
+            
+            if (!advert.is_active) {
+                status = 'Inactive';
+                statusClass = 'advert-status-inactive';
+            } else if (endDate && now > endDate) {
+                status = 'Expired';
+                statusClass = 'advert-status-inactive';
+            } else if (now < startDate) {
+                status = 'Scheduled';
+                statusClass = 'advert-status-scheduled';
+            }
+            
+            return `
+    <div class="advert-item" data-advert-id="${advert.id}">
+        <div class="advert-header">
+            <div style="flex: 1;">
+                <div class="advert-title-small">${advert.title}</div>
+                <div style="display: flex; gap: 10px; align-items: center; margin-top: 5px;">
+                    <span class="advert-type-badge">
+                        ${advert.advert_type === 'all_shops' ? 'All Shops' : 'Specific Shop'}
+                    </span>
+                    <span class="advert-status-badge ${statusClass}">
+                        ${status}
+                    </span>
+                    ${advert.shop_id ? `
+                        <span style="color: #666; font-size: 0.8rem;">
+                            Shop: ${advert.shops?.name || 'N/A'}
+                        </span>
+                    ` : ''}
+                </div>
+            </div>
+            <div style="font-weight: bold; color: var(--primary);">
+                Priority: ${advert.priority}
+            </div>
+        </div>
+        
+        ${advert.description ? `
+            <p style="color: #666; margin: 10px 0;">${advert.description}</p>
+        ` : ''}
+        
+        <div class="advert-dates">
+            <div><strong>Starts:</strong> ${new Date(advert.starts_at).toLocaleString()}</div>
+            ${advert.ends_at ? `
+                <div><strong>Ends:</strong> ${new Date(advert.ends_at).toLocaleString()}</div>
+            ` : ''}
+            <div><strong>Show:</strong> ${advert.display_delay}s delay, ${advert.show_duration}s duration</div>
+        </div>
+        
+        <div class="advert-actions">
+            <button class="btn-secondary btn-small toggle-advert-btn" data-advert-id="${advert.id}" data-activate="${!advert.is_active}">
+                ${advert.is_active ? 'Deactivate' : 'Activate'}
+            </button>
+            <button class="btn-secondary btn-small edit-advert-btn" data-advert-id="${advert.id}">
+                Edit
+            </button>
+            <button class="btn-danger btn-small delete-advert-btn" data-advert-id="${advert.id}">
+                Delete
+            </button>
+        </div>
+    </div>
+`;
+        }).join('');
+        
+    } catch (error) {
+        console.error("Error loading adverts:", error);
+        const advertsList = document.getElementById('adverts-list');
+        advertsList.innerHTML = `
+            <div class="empty-state">
+                <i class="fas fa-exclamation-triangle"></i>
+                <p>Error loading adverts</p>
+            </div>
+        `;
+    }
+
+    setTimeout(() => {
+        setupAdvertEventListeners();
+    }, 100);
+}
+
+function setupAdvertEventListeners() {
+    document.querySelectorAll('.delete-advert-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const advertId = this.getAttribute('data-advert-id');
+            deleteAdvert(advertId);
+        });
+    });
+    
+    document.querySelectorAll('.toggle-advert-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const advertId = this.getAttribute('data-advert-id');
+            const activate = this.getAttribute('data-activate') === 'true';
+            toggleAdvertStatus(advertId, activate);
+        });
+    });
+    
+    document.querySelectorAll('.edit-advert-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const advertId = this.getAttribute('data-advert-id');
+            editAdvert(advertId);
+        });
+    });
+}
+
+async function editAdvert(advertId) {
+    try {
+        const { data: advert, error } = await supabase
+            .from('adverts')
+            .select('*')
+            .eq('id', advertId)
+            .single();
+        
+        if (error) throw error;
+        
+        const modal = document.createElement('div');
+        modal.className = 'modal-overlay active';
+        modal.innerHTML = `
+            <div class="page-modal" style="max-width: 600px;">
+                <div class="page-header">
+                    <h2>Edit Advert</h2>
+                    <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="page-content">
+                    <div class="form-group">
+                        <label class="form-label">Advert Title *</label>
+                        <input type="text" class="form-input" id="edit-advert-title" value="${advert.title || ''}">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">Description (Optional)</label>
+                        <textarea class="form-textarea" id="edit-advert-description">${advert.description || ''}</textarea>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">Image URL *</label>
+                        <input type="text" class="form-input" id="edit-advert-image-url" value="${advert.image_url || ''}">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">Advert Type *</label>
+                        <select class="form-input" id="edit-advert-type">
+                            <option value="all_shops" ${advert.advert_type === 'all_shops' ? 'selected' : ''}>All Shops (All customers)</option>
+                            <option value="specific_shop" ${advert.advert_type === 'specific_shop' ? 'selected' : ''}>Specific Shop</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group" id="edit-advert-shop-select-group" style="${advert.advert_type === 'specific_shop' ? 'display: block;' : 'display: none;'}">
+                        <label class="form-label">Select Shop *</label>
+                        <select class="form-input" id="edit-advert-shop-select">
+                            <option value="">Select a shop</option>
+                            ${allShops.map(shop => 
+                                `<option value="${shop.id}" ${shop.id === advert.shop_id ? 'selected' : ''}>${shop.name}</option>`
+                            ).join('')}
+                        </select>
+                    </div>
+                    
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                        <div class="form-group">
+                            <label class="form-label">Display Delay (seconds)</label>
+                            <input type="number" class="form-input" id="edit-advert-delay" value="${advert.display_delay || 10}" min="1" max="60">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Show Duration (seconds)</label>
+                            <input type="number" class="form-input" id="edit-advert-duration" value="${advert.show_duration || 10}" min="1" max="60">
+                        </div>
+                    </div>
+                    
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                        <div class="form-group">
+                            <label class="form-label">Start Date</label>
+                            <input type="datetime-local" class="form-input" id="edit-advert-start-date" 
+                                   value="${advert.starts_at ? new Date(advert.starts_at).toISOString().slice(0, 16) : ''}">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">End Date (Optional)</label>
+                            <input type="datetime-local" class="form-input" id="edit-advert-end-date" 
+                                   value="${advert.ends_at ? new Date(advert.ends_at).toISOString().slice(0, 16) : ''}">
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">Priority</label>
+                        <input type="number" class="form-input" id="edit-advert-priority" value="${advert.priority || 1}" min="1" max="10">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">Status</label>
+                        <select class="form-input" id="edit-advert-status">
+                            <option value="true" ${advert.is_active ? 'selected' : ''}>Active</option>
+                            <option value="false" ${!advert.is_active ? 'selected' : ''}>Inactive</option>
+                        </select>
+                    </div>
+                    
+                    <div style="display: flex; gap: 10px; margin-top: 20px;">
+                        <button class="btn-primary" id="save-advert-edit-btn" style="flex: 1;">Save Changes</button>
+                        <button class="btn-secondary" onclick="this.closest('.modal-overlay').remove()" style="flex: 1;">Cancel</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        
+        document.getElementById('edit-advert-type').addEventListener('change', function() {
+            const shopSelectGroup = document.getElementById('edit-advert-shop-select-group');
+            shopSelectGroup.style.display = this.value === 'specific_shop' ? 'block' : 'none';
+        });
+        
+        document.getElementById('save-advert-edit-btn').addEventListener('click', async () => {
+            await saveAdvertEdit(advertId, modal);
+        });
+        
+        modal.addEventListener('click', function(e) {
+            if (e.target === this) {
+                this.remove();
+            }
+        });
+        
+    } catch (error) {
+        console.error("Error loading advert for editing:", error);
+        alert('Error loading advert: ' + error.message);
+    }
+}
+
+async function saveAdvertEdit(advertId, modal) {
+    const title = document.getElementById('edit-advert-title').value.trim();
+    const description = document.getElementById('edit-advert-description').value.trim();
+    const imageUrl = document.getElementById('edit-advert-image-url').value.trim();
+    const advertType = document.getElementById('edit-advert-type').value;
+    const shopId = advertType === 'specific_shop' ? document.getElementById('edit-advert-shop-select').value : null;
+    const delay = parseInt(document.getElementById('edit-advert-delay').value) || 10;
+    const duration = parseInt(document.getElementById('edit-advert-duration').value) || 10;
+    const priority = parseInt(document.getElementById('edit-advert-priority').value) || 1;
+    const isActive = document.getElementById('edit-advert-status').value === 'true';
+    const startDate = document.getElementById('edit-advert-start-date').value;
+    const endDate = document.getElementById('edit-advert-end-date').value;
+    
+    if (!title || !imageUrl) {
+        alert('Title and Image URL are required');
+        return;
+    }
+    
+    if (advertType === 'specific_shop' && !shopId) {
+        alert('Please select a shop for specific shop advert');
+        return;
+    }
+    
+    try {
+        const updateData = {
+            title: title,
+            description: description,
+            image_url: imageUrl,
+            advert_type: advertType,
+            shop_id: shopId,
+            show_duration: duration,
+            display_delay: delay,
+            priority: priority,
+            is_active: isActive,
+            starts_at: startDate ? new Date(startDate).toISOString() : new Date().toISOString()
+        };
+        
+        if (endDate) {
+            updateData.ends_at = new Date(endDate).toISOString();
+        } else {
+            updateData.ends_at = null;
+        }
+        
+        const { error } = await supabase
+            .from('adverts')
+            .update(updateData)
+            .eq('id', advertId);
+        
+        if (error) throw error;
+        
+        showToast('Advert updated successfully!');
+        modal.remove();
+        await loadAdvertsList();
+        
+    } catch (error) {
+        console.error("Error updating advert:", error);
+        alert('Error updating advert: ' + error.message);
+    }
+}
+
+async function loadShopAdverts() {
+    if (!currentShop) return;
+    
+    try {
+        const now = new Date().toISOString();
+        
+        const { data: regularAdverts, error: regularError } = await supabase
+            .from('adverts')
+            .select('*')
+            .or(`shop_id.eq.${currentShop.id},advert_type.eq.all_shops`)
+            .eq('is_active', true)
+            .order('priority', { ascending: false });
+        
+        if (regularError) throw regularError;
+        
+        const { data: shopAdverts, error: shopError } = await supabase
+            .from('shop_adverts')
+            .select('*')
+            .eq('shop_id', currentShop.id)
+            .eq('is_active', true)
+            .gte('expires_at', now)
+            .order('created_at', { ascending: false });
+        
+        if (shopError) throw shopError;
+        
+        const activeRegularAdverts = regularAdverts?.filter(advert => {
+            const startDate = new Date(advert.starts_at);
+            const endDate = advert.ends_at ? new Date(advert.ends_at) : null;
+            
+            if (now < startDate) return false;
+            if (endDate && now > endDate) return false;
+            return true;
+        }) || [];
+        
+        const advertsList = document.getElementById('shop-adverts-list');
+        
+        if ((!activeRegularAdverts || activeRegularAdverts.length === 0) && 
+            (!shopAdverts || shopAdverts.length === 0)) {
+            advertsList.innerHTML = `
+                <div class="empty-state">
+                    <i class="fas fa-ad"></i>
+                    <p>No active advertisements</p>
+                    <p><small>Contact the developer to create advertisements for your shop</small></p>
+                </div>
+            `;
+            return;
+        }
+        
+        let html = '';
+        
+        if (activeRegularAdverts.length > 0) {
+            html += '<h3 style="margin: 20px 0 10px;">Regular Adverts</h3>';
+            html += activeRegularAdverts.map(advert => `
+                <div class="advert-item" style="margin-bottom: 20px;">
+                    <div class="advert-header">
+                        <div style="flex: 1;">
+                            <div class="advert-title-small">${advert.title}</div>
+                            <div style="display: flex; gap: 10px; align-items: center; margin-top: 5px;">
+                                <span class="advert-type-badge">
+                                    ${advert.advert_type === 'all_shops' ? 'All Shops' : 'Your Shop Only'}
+                                </span>
+                            </div>
+                        </div>
+                        <div style="font-weight: bold; color: var(--primary);">
+                            Priority: ${advert.priority}
+                        </div>
+                    </div>
+                    
+                    ${advert.description ? `
+                        <p style="color: #666; margin: 10px 0;">${advert.description}</p>
+                    ` : ''}
+                    
+                    <div class="advert-dates">
+                        <div><strong>Shows:</strong> After ${advert.display_delay} seconds</div>
+                        <div><strong>Duration:</strong> ${advert.show_duration} seconds</div>
+                        ${advert.ends_at ? `
+                            <div><strong>Ends:</strong> ${new Date(advert.ends_at).toLocaleDateString()}</div>
+                        ` : ''}
+                    </div>
+                    
+                    <div style="margin-top: 15px; padding: 10px; background: #f8f9fa; border-radius: 5px; font-size: 0.9rem; color: #666;">
+                        <i class="fas fa-info-circle"></i> 
+                        This advert shows as a popup ${advert.display_delay} seconds after customers open the menu
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        if (shopAdverts && shopAdverts.length > 0) {
+            html += '<h3 style="margin: 30px 0 10px;">Shop Adverts 2.0</h3>';
+            html += shopAdverts.map(advert => `
+                <div class="advert-item" style="margin-bottom: 20px;">
+                    <div class="advert-header">
+                        <div style="flex: 1;">
+                            <div class="advert-title-small">Image Advertisement</div>
+                            <div style="display: flex; gap: 10px; align-items: center; margin-top: 5px;">
+                                <span class="advert-type-badge" style="background: #28a745;">
+                                    Promotion
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div style="margin: 10px 0;">
+                        <img src="${advert.image_url}" alt="Shop advert" style="max-width: 100%; max-height: 150px; border-radius: 5px;" 
+                             onerror="this.src='https://via.placeholder.com/300x150?text=Image+Error'">
+                    </div>
+                    
+                    <div class="advert-dates">
+                        <div><strong>Started:</strong> ${new Date(advert.starts_at).toLocaleDateString()}</div>
+                        <div><strong>Expires:</strong> ${new Date(advert.expires_at).toLocaleDateString()}</div>
+                        <div><strong>Duration:</strong> ${advert.duration_days} days</div>
+                    </div>
+                    
+                    <div style="margin-top: 15px; padding: 10px; background: #f8f9fa; border-radius: 5px; font-size: 0.9rem; color: #666;">
+                        <i class="fas fa-info-circle"></i> 
+                        This image will display in customer menu page until promotion ends
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        advertsList.innerHTML = html;
+        
+    } catch (error) {
+        console.error("Error loading shop adverts:", error);
+        const advertsList = document.getElementById('shop-adverts-list');
+        advertsList.innerHTML = `
+            <div class="empty-state">
+                <i class="fas fa-exclamation-triangle"></i>
+                <p>Error loading advertisements</p>
+            </div>
+        `;
+    }
+}
+
+async function toggleAdvertStatus(advertId, activate) {
+    try {
+        const { error } = await supabase
+            .from('adverts')
+            .update({ is_active: activate })
+            .eq('id', advertId);
+        
+        if (error) throw error;
+        
+        showToast(`Advert ${activate ? 'activated' : 'deactivated'} successfully!`);
+        await loadAdvertsList();
+        
+    } catch (error) {
+        console.error("Error toggling advert status:", error);
+        alert('Error updating advert status: ' + error.message);
+    }
+}
+
+
+async function deleteAdvert(advertId) {
+    if (!confirm('Are you sure you want to delete this advert?')) {
+        return;
+    }
+    
+    try {
+        const { error } = await supabase
+            .from('adverts')
+            .delete()
+            .eq('id', advertId);
+        
+        if (error) throw error;
+        
+        showToast('Advert deleted successfully!');
+        await loadAdvertsList();
+        
+    } catch (error) {
+        console.error("Error deleting advert:", error);
+        alert('Error deleting advert: ' + error.message);
+    }
+}
+
+let advertTimer = null;
+let currentAdvert = null;
+
+async function showAdvertsToCustomer() {
+    if (!currentUser || !currentShop) return;
+    
+    const mainContent = document.getElementById('main-content');
+    if (!mainContent || !document.querySelector('.food-list')) {
+        return;
+    }
+    
+    try {
+        const { data: adverts, error } = await supabase
+            .from('adverts')
+            .select('*')
+            .or(`shop_id.eq.${currentShop.id},advert_type.eq.all_shops`)
+            .eq('is_active', true)
+            .order('priority', { ascending: false })
+            .order('created_at', { ascending: false });
+        
+        if (error) throw error;
+        
+        if (!adverts || adverts.length === 0) return;
+        
+        const now = new Date();
+        
+        const activeAdverts = adverts.filter(advert => {
+            const startDate = new Date(advert.starts_at);
+            const endDate = advert.ends_at ? new Date(advert.ends_at) : null;
+            
+            if (now < startDate) return false;
+            if (endDate && now > endDate) return false;
+            return true;
+        });
+        
+        if (activeAdverts.length === 0) return;
+        
+        const advert = activeAdverts[0];
+        
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        
+        const { data: impressions, error: impressionError } = await supabase
+            .from('advert_impressions')
+            .select('*')
+            .eq('advert_id', advert.id)
+            .eq('customer_email', currentUser.email)
+            .gte('viewed_at', yesterday.toISOString())
+            .limit(1);
+        
+        if (impressionError) {
+            console.error("Error checking impressions:", impressionError);
+            return;
+        }
+        
+        if (impressions && impressions.length > 0) {
+            console.log('User already saw this advert today');
+            return;
+        }
+        
+        currentAdvert = advert;
+        
+        advertTimer = setTimeout(() => {
+            displayAdvert(advert);
+        }, advert.display_delay * 1000);
+        
+    } catch (error) {
+        console.error("Error loading adverts:", error);
+    }
+}
+
+function displayAdvert(advert) {
+    const modal = document.createElement('div');
+    modal.className = 'advert-modal-overlay active';
+    modal.id = 'advert-modal';
+    
+    modal.innerHTML = `
+        <div class="advert-modal">
+            <button class="advert-close-btn" id="advert-close-btn">
+                <i class="fas fa-times"></i>
+            </button>
+            <div class="advert-timer" id="advert-timer">
+                <i class="fas fa-clock"></i>
+                <span id="advert-countdown">${advert.show_duration}</span>s
+            </div>
+            
+            <img src="${advert.image_url}" alt="${advert.title}" class="advert-image" 
+                 onerror="this.src='https://via.placeholder.com/800x600?text=Advert+Image+Not+Found'">
+            
+            ${advert.title || advert.description ? `
+                <div class="advert-info" id="advert-info">
+                    ${advert.title ? `<div class="advert-title">${advert.title}</div>` : ''}
+                    ${advert.description ? `<div class="advert-description">${advert.description}</div>` : ''}
+                </div>
+            ` : ''}
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    let countdown = advert.show_duration;
+    const countdownElement = document.getElementById('advert-countdown');
+    const timerElement = document.getElementById('advert-timer');
+    
+    const countdownInterval = setInterval(() => {
+        countdown--;
+        if (countdownElement) {
+            countdownElement.textContent = countdown;
+        }
+        
+        if (countdown <= 0) {
+            clearInterval(countdownInterval);
+            closeAdvert(advert.id);
+        }
+    }, 1000);
+    
+    document.getElementById('advert-close-btn').addEventListener('click', () => {
+        clearInterval(countdownInterval);
+        closeAdvert(advert.id);
+    });
+    
+    const advertImage = document.querySelector('.advert-image');
+    const advertInfo = document.getElementById('advert-info');
+    
+    if (advertImage && advertInfo) {
+        advertImage.addEventListener('click', () => {
+            advertInfo.style.display = advertInfo.style.display === 'block' ? 'none' : 'block';
+        });
+    }
+    
+    recordAdvertImpression(advert.id);
+}
+
+function closeAdvert(advertId) {
+    const modal = document.getElementById('advert-modal');
+    if (modal) {
+        modal.classList.remove('active');
+        setTimeout(() => {
+            modal.remove();
+        }, 300);
+    }
+    
+    if (advertTimer) {
+        clearTimeout(advertTimer);
+        advertTimer = null;
+    }
+    
+    currentAdvert = null;
+}
+
+async function recordAdvertImpression(advertId) {
+    if (!currentUser || !currentShop) return;
+    
+    try {
+        const { error } = await supabase
+            .from('advert_impressions')
+            .insert([{
+                advert_id: advertId,
+                customer_email: currentUser.email,
+                shop_id: currentShop.id
+            }]);
+        
+        if (error) {
+            console.error("Error recording impression:", error);
+        }
+        
+    } catch (error) {
+        console.error("Error recording advert impression:", error);
+    }
+}
+    

@@ -1,0 +1,43 @@
+
+    .search-box input:focus {
+        border-color: var(--primary);
+        box-shadow: 0 0 0 3px rgba(255, 123, 49, 0.1);
+    }
+    
+    .search-box input::placeholder {
+        color: #aaa;
+    }
+    
+    .food-card.search-hidden {
+        display: none !important;
+    }
+    
+    .no-search-results {
+        text-align: center;
+        padding: 60px 20px;
+        color: #666;
+    }
+    
+    .no-search-results i {
+        font-size: 48px;
+        color: #ccc;
+        margin-bottom: 16px;
+    }
+    
+    body.dark-mode .search-box input {
+        background: #3a3a3a;
+        border-color: var(--border-color);
+        color: var(--text-primary);
+    }
+    
+    body.dark-mode .search-box input::placeholder {
+        color: #aaa;
+    }
+    
+    body.dark-mode .search-box i {
+        color: #aaa;
+    }
+    
+    body.dark-mode #clear-search-btn {
+        color: #aaa;
+    }

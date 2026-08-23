@@ -13586,3 +13586,43 @@ async function enableShopPushNotifications() {
 
 window.enableShopPushNotifications =
 enableShopPushNotifications;
+
+function unlockNewOrderAudio() {
+
+    const audio =
+        document.getElementById(
+            'new-order-alert'
+        );
+
+    if (!audio) return;
+
+    audio.volume = 1;
+
+    audio.play()
+        .then(() => {
+
+            audio.pause();
+            audio.currentTime = 0;
+
+            console.log(
+                'New order audio unlocked'
+            );
+
+        })
+        .catch(error => {
+
+            console.log(
+                'Audio unlock waiting for user interaction:',
+                error
+            );
+        });
+}
+
+
+document.addEventListener(
+    'click',
+    unlockNewOrderAudio,
+    {
+        once: true
+    }
+);

@@ -6632,6 +6632,44 @@ if (latestShopError) {
             throw error;
         }
 
+        const pendingPayment =
+    payments?.find(payment => {
+
+        const paymentStatus =
+            String(
+                payment.status || ''
+            ).toLowerCase();
+
+        const billingMonth =
+            String(
+                payment.billing_month || ''
+            ).slice(0, 10);
+
+        const nextBillingDate =
+            String(
+                currentShop.next_billing_date || ''
+            ).slice(0, 10);
+
+        return (
+            paymentStatus === 'pending' &&
+            billingMonth === nextBillingDate
+        );
+    });
+
+
+if (payButton && pendingPayment) {
+
+    payButton.disabled = true;
+
+    payButton.innerHTML = `
+        <i class="fas fa-clock"></i>
+        Payment Pending
+    `;
+
+    payButton.title =
+        'A subscription payment is already pending for this billing month.';
+}
+
 
         if (!paymentHistory) {
             return;
@@ -7345,6 +7383,47 @@ async function startShopSubscriptionPayment() {
         alert('This shop is currently on the Free plan.');
         return;
     }
+
+    const {
+    data: existingPendingPayment,
+    error: pendingPaymentError
+} = await supabase
+    .from('shop_subscription_payments')
+    .select('id, status, billing_month')
+    .eq('shop_id', currentShop.id)
+    .eq(
+        'billing_month',
+        currentShop.next_billing_date
+    )
+    .eq('status', 'pending')
+    .maybeSingle();
+
+
+if (pendingPaymentError) {
+
+    console.error(
+        'Unable to check pending subscription payment:',
+        pendingPaymentError
+    );
+
+    alert(
+        'Unable to verify your subscription payment status. Please try again.'
+    );
+
+    return;
+}
+
+
+if (existingPendingPayment) {
+
+    alert(
+        'A payment is already pending for this subscription month.'
+    );
+
+    await loadShopPayments();
+
+    return;
+}
 
     const button =
         document.getElementById(

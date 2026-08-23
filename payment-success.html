@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Payment Successful | FasFoods</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            background: #f7f7f7;
+        }
+
+        .payment-card {
+            width: 100%;
+            max-width: 430px;
+            background: #fff;
+            padding: 40px 30px;
+            border-radius: 20px;
+            text-align: center;
+            box-shadow: 0 10px 35px rgba(0,0,0,0.08);
+        }
+
+        .icon {
+            width: 80px;
+            height: 80px;
+            margin: 0 auto 22px;
+            border-radius: 50%;
+            background: #e8f7ec;
+            color: #28a745;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 42px;
+            font-weight: bold;
+        }
+
+        h1 {
+            font-size: 25px;
+            margin-bottom: 12px;
+            color: #222;
+        }
+
+        p {
+            color: #666;
+            line-height: 1.6;
+            margin-bottom: 28px;
+        }
+
+        .amount {
+            font-size: 28px;
+            font-weight: bold;
+            color: #222;
+            margin-bottom: 8px;
+        }
+
+        .return-btn {
+            display: block;
+            width: 100%;
+            border: 0;
+            border-radius: 12px;
+            padding: 15px;
+            background: #FF7B31;
+            color: white;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="payment-card">
+
+        <div class="icon">✓</div>
+
+        <h1>Payment Successful</h1>
+
+        <div class="amount">R99.00</div>
+
+        <p>
+            Your FasFoods monthly subscription payment
+            was successful.
+        </p>
+
+        <button
+            class="return-btn"
+            onclick="returnToFasFoods()"
+        >
+            Return to FasFoods
+        </button>
+
+    </div>
+
+    <script>
+        function returnToFasFoods() {
+            window.location.href =
+                'http://localhost:5500/index.html?shopPayment=success';
+        }
+    </script>
+
+</body>
+</html>

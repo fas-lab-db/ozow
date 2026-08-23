@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Payment Error | FasFoods</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            background: #f7f7f7;
+        }
+
+        .payment-card {
+            width: 100%;
+            max-width: 430px;
+            background: white;
+            padding: 40px 30px;
+            border-radius: 20px;
+            text-align: center;
+            box-shadow: 0 10px 35px rgba(0,0,0,0.08);
+        }
+
+        .icon {
+            width: 80px;
+            height: 80px;
+            margin: 0 auto 22px;
+            border-radius: 50%;
+            background: #fdecec;
+            color: #dc3545;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 38px;
+            font-weight: bold;
+        }
+
+        h1 {
+            font-size: 25px;
+            margin-bottom: 12px;
+            color: #222;
+        }
+
+        p {
+            color: #666;
+            line-height: 1.6;
+            margin-bottom: 28px;
+        }
+
+        .return-btn {
+            display: block;
+            width: 100%;
+            border: 0;
+            border-radius: 12px;
+            padding: 15px;
+            background: #FF7B31;
+            color: white;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="payment-card">
+
+        <div class="icon">!</div>
+
+        <h1>Payment Error</h1>
+
+        <p>
+            We couldn't complete your subscription payment.
+            Please return to FasFoods and try again.
+        </p>
+
+        <button
+            class="return-btn"
+            onclick="returnToFasFoods()"
+        >
+            Return to FasFoods
+        </button>
+
+    </div>
+
+    <script>
+        function returnToFasFoods() {
+            window.location.href =
+                'http://localhost:5500/index.html?shopPayment=error';
+        }
+    </script>
+
+</body>
+</html>

@@ -12007,6 +12007,8 @@ loadShopAdminContent = function() {
 window.refreshShopSubscription =
     refreshShopSubscription;
 
+    window.downloadShopInvoice = downloadShopInvoice;
+
         // Initialize the app
         initApp();
 

@@ -6641,18 +6641,18 @@ if (latestShopError) {
             ).toLowerCase();
 
         const billingMonth =
-            String(
-                payment.billing_month || ''
-            ).slice(0, 10);
+    String(
+        payment.billing_month || ''
+    ).slice(0, 7);
 
-        const nextBillingDate =
-            String(
-                currentShop.next_billing_date || ''
-            ).slice(0, 10);
+const nextBillingMonth =
+    String(
+        currentShop.next_billing_date || ''
+    ).slice(0, 7);
 
         return (
             paymentStatus === 'pending' &&
-            billingMonth === nextBillingDate
+            billingMonth === nextBillingMonth
         );
     });
 

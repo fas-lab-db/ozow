@@ -298,9 +298,9 @@ async function checkForNewOrders() {
             .eq('shop_id', currentShop.id)
             .order('created_at', { ascending: false })
             .limit(1)
-            .single();
+            .maybeSingle();
         
-        if (error && error.code !== 'PGRST116') {
+        if (error) {
             console.error("Error checking for new orders:", error);
             return;
         }
@@ -3687,6 +3687,7 @@ if (imageFile) {
                     await loadShopAdminSection(section);
                 });
             });
+            await handleSubscriptionPaymentReturn();
         }
 
         async function loadShopAdminContent() {
@@ -4046,6 +4047,17 @@ if (imageFile) {
             ">
                 Manage your FasFoods subscription and payment history.
             </p>
+            <button
+    class="btn-secondary"
+    onclick="refreshShopSubscription()"
+    style="
+        margin-top: 12px;
+        padding: 8px 14px;
+    "
+>
+    <i class="fas fa-sync-alt"></i>
+    Refresh Subscription
+</button>
         </div>
 
         <span
@@ -6284,8 +6296,72 @@ async function loadShopNotifications() {
     }
 }
 
+async function refreshShopSubscription() {
+    if (!currentShop) return;
+
+    try {
+
+        await loadShopPayments();
+
+        showToast(
+            'Subscription information refreshed.'
+        );
+
+    } catch (error) {
+
+        console.error(
+            'Error refreshing subscription:',
+            error
+        );
+
+        showToast(
+            'Unable to refresh subscription information.',
+            'error'
+        );
+    }
+}
+
 async function loadShopPayments() {
     if (!currentShop) return;
+
+    const {
+    data: latestShop,
+    error: latestShopError
+} = await supabase
+    .from('shops')
+    .select(`
+        id,
+        plan,
+        subscription_status,
+        last_payment_at,
+        paid_until,
+        next_billing_date
+    `)
+    .eq('id', currentShop.id)
+    .single();
+
+if (latestShopError) {
+    console.error(
+        'Error refreshing subscription status:',
+        latestShopError
+    );
+} else if (latestShop) {
+
+    currentShop.plan =
+        latestShop.plan;
+
+    currentShop.subscription_status =
+        latestShop.subscription_status;
+
+    currentShop.last_payment_at =
+        latestShop.last_payment_at;
+
+    currentShop.paid_until =
+        latestShop.paid_until;
+
+    currentShop.next_billing_date =
+        latestShop.next_billing_date;
+}
 
     const statusBadge =
         document.getElementById('subscription-status-badge');
@@ -6376,12 +6452,108 @@ async function loadShopPayments() {
 
 
     if (offlineWarning) {
-        offlineWarning.style.display =
-            status === 'offline'
-                ? 'block'
-                : 'none';
-    }
 
+    if (status === 'offline') {
+
+        offlineWarning.style.display = 'block';
+
+        offlineWarning.innerHTML = `
+            <div style="
+                display: flex;
+                gap: 12px;
+                align-items: flex-start;
+            ">
+                <i
+                    class="fas fa-exclamation-triangle"
+                    style="
+                        font-size: 1.4rem;
+                        margin-top: 2px;
+                    "
+                ></i>
+
+                <div>
+                    <strong>
+                        Subscription overdue — Shop Offline
+                    </strong>
+
+                    <p style="margin: 6px 0 0 0;">
+                        Customers cannot currently place orders
+                        from your shop.
+                        Pay your R99 subscription to reactivate it.
+                    </p>
+                </div>
+            </div>
+        `;
+
+    } else if (status === 'overdue') {
+
+        const today = new Date();
+
+        const saDate = new Date(
+            today.toLocaleString(
+                'en-US',
+                {
+                    timeZone: 'Africa/Johannesburg'
+                }
+            )
+        );
+
+        const dayNumber =
+            saDate.getDate();
+
+        const daysRemaining =
+            Math.max(
+                0,
+                6 - dayNumber
+            );
+
+        offlineWarning.style.display = 'block';
+
+        offlineWarning.innerHTML = `
+            <div style="
+                display: flex;
+                gap: 12px;
+                align-items: flex-start;
+            ">
+                <i
+                    class="fas fa-clock"
+                    style="
+                        font-size: 1.4rem;
+                        margin-top: 2px;
+                    "
+                ></i>
+
+                <div>
+                    <strong>
+                        Payment Overdue
+                    </strong>
+
+                    <p style="margin: 6px 0 0 0;">
+                        Your R99 subscription for this month
+                        has not been paid yet.
+                    </p>
+
+                    <p style="
+                        margin: 8px 0 0 0;
+                        font-weight: 600;
+                    ">
+                        Your shop is still online.
+                        ${
+                            daysRemaining > 0
+                                ? `${daysRemaining} day${daysRemaining === 1 ? '' : 's'} remaining before your shop goes offline.`
+                                : `Your shop will go offline after today if payment is not received.`
+                        }
+                    </p>
+                </div>
+            </div>
+        `;
+
+    } else {
+
+        offlineWarning.style.display = 'none';
+
+    }
+}
 
     if (nextPaymentElement) {
         nextPaymentElement.textContent =
@@ -11832,6 +12004,9 @@ loadShopAdminContent = function() {
 // window.deleteDevMenuItem = deleteDevMenuItem;
 // window.deleteShop = deleteShop;
 
+window.refreshShopSubscription =
+    refreshShopSubscription;
+
         // Initialize the app
         initApp();
 
@@ -12920,4 +13095,69 @@ async function recordAdvertImpression(advertId) {
         console.error("Error recording advert impression:", error);
     }
 }
-    
+
+async function handleSubscriptionPaymentReturn() {
+    const params = new URLSearchParams(window.location.search);
+
+    const paymentResult =
+        params.get('subscription_payment');
+
+    if (!paymentResult) {
+        return;
+    }
+
+    // Clean the URL so refresh does not repeat the message
+    const cleanUrl =
+        window.location.origin +
+        window.location.pathname;
+
+    window.history.replaceState(
+        {},
+        document.title,
+        cleanUrl
+    );
+
+    if (!currentShop) {
+        return;
+    }
+
+    const paymentsNav =
+        document.getElementById('shop-payments-nav');
+
+    if (paymentsNav) {
+        document
+            .querySelectorAll(
+                '#shop-admin-dashboard .sidebar-item'
+            )
+            .forEach(item => {
+                item.classList.remove('active');
+            });
+
+        paymentsNav.classList.add('active');
+    }
+
+    await loadShopAdminSection(
+        'shop-payments'
+    );
+
+    if (paymentResult === 'success') {
+
+        showToast(
+            'Payment successful. Subscription updated.'
+        );
+
+    } else if (paymentResult === 'cancelled') {
+
+        showToast(
+            'Payment was cancelled.',
+            'error'
+        );
+
+    } else if (paymentResult === 'error') {
+
+        showToast(
+            'Payment could not be completed.',
+            'error'
+        );
+    }
+}

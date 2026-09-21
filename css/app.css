@@ -16,7 +16,7 @@
 
         body {
             font-family: 'Segoe UI', Roboto, system-ui, -apple-system, sans-serif;
-            background-color: #f5f3f6;
+            background-color: #ffffff;
             color: var(--dark);
             max-width: 100%;
             margin: 0 auto;
@@ -42,7 +42,6 @@
     width: 100%;
     max-width: 600px;
     margin: 0 auto;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
 .header-content {
@@ -162,7 +161,6 @@
     overflow: hidden;
     cursor: pointer;
     position: relative;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
     border: 1px solid #f0f0f0;
     display: flex;
     padding: 12px;
@@ -296,13 +294,11 @@
     font-size: 1.2rem;
     cursor: pointer;
     transition: all 0.2s ease;
-    box-shadow: 0 4px 12px rgba(255, 123, 49, 0.3);
     flex-shrink: 0;
 }
 
 .btn-add:hover {
     transform: scale(1.05);
-    box-shadow: 0 6px 16px rgba(255, 123, 49, 0.4);
 }
 
 .btn-add:active {
@@ -347,7 +343,6 @@
     font-size: 0.6rem;
     font-weight: 700;
     z-index: 10;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .time-estimate {
@@ -462,8 +457,6 @@
     margin: 0 auto;
     border-radius: 40px;
     z-index: 1000;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.08), 
-                0 0 0 1px rgba(255, 123, 49, 0.1);
     transition: transform 0.3s ease-in-out;
 }
 
@@ -521,7 +514,6 @@
     height: 4px;
     background: #FF7B31;
     border-radius: 50%;
-    box-shadow: 0 0 0 2px rgba(255, 123, 49, 0.2);
 }
 
 @keyframes navItemPop {
@@ -727,7 +719,6 @@
             padding: 32px 24px;
             max-width: 420px;
             width: 90%;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.15);
             animation: slideUp 0.4s ease-out;
         }
 
@@ -765,7 +756,6 @@
             cursor: pointer;
             transition: all 0.2s;
             border: 2px solid transparent;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.02);
         }
 
 
@@ -781,7 +771,6 @@
         .shop-option:hover {
             transform: translateY(-2px);
             border-color: var(--primary);
-            box-shadow: 0 12px 24px -8px rgba(255, 123, 49, 0.2);
             background: white;
         }
 
@@ -819,7 +808,6 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
         }
 
         .btn-danger {
@@ -927,7 +915,6 @@
             background: white;
             border-radius: 10px;
             padding: 15px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
         }
 
         .menu-item-header {
@@ -999,7 +986,6 @@
     background: white;
     padding: 20px;
     border-radius: 10px;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
     margin-bottom: 20px;
 }
 
@@ -1008,7 +994,6 @@
     padding: 15px;
     border-radius: 8px;
     margin-bottom: 10px;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
     border-left: 4px solid var(--primary);
 }
 
@@ -1082,7 +1067,6 @@
     background: white;
     padding: 20px;
     border-radius: 10px;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
     margin-bottom: 20px;
 }
 
@@ -1426,7 +1410,6 @@
     max-height: 100%;
     object-fit: contain;
     border-radius: 10px;
-    box-shadow: 0 0 30px rgba(255, 255, 255, 0.1);
 }
 
 .advert-info {
@@ -1493,7 +1476,6 @@
     border-radius: 10px;
     padding: 20px;
     margin-bottom: 15px;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
     border-left: 4px solid var(--primary);
 }
 
@@ -1559,4 +1541,7 @@
 .app-header.hidden {
     display: none;
 }
-    
+
+.profile-alert-card {
+    margin-top: 20px;
+}

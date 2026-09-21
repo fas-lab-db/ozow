@@ -1,29 +1,75 @@
+(function () {
+
+    const overlay =
+        document.getElementById(
+            'orange-splash-overlay'
+        );
+
+    const startButton =
+        document.getElementById(
+            'start-app-btn'
+        );
+
+    if (!overlay || !startButton) {
+        return;
+    }
+
+    async function requestAppFullscreen() {
+
+        const elem =
+            document.documentElement;
+
+        const request =
+            elem.requestFullscreen ||
+            elem.webkitRequestFullscreen ||
+            elem.msRequestFullscreen;
+
+        if (!request) {
+            return;
+        }
+
+        try {
+
+            await request.call(elem);
+
+        } catch (error) {
+
+            console.log(
+                'Fullscreen request was not allowed:',
+                error
+            );
+
+        }
+    }
 
 
-        (function() {
-            const startTime = Date.now();
-            const duration = 5000; 
-            
-            function updateTimer() {
-                const timerElement = document.getElementById('splash-timer-text');
-                if (timerElement) {
-                    const elapsed = Date.now() - startTime;
-                    const remaining = Math.max(0, Math.ceil((duration - elapsed) / 1000));
-                    timerElement.textContent = remaining + 's';
-                }
-            }
-            
-            const timerInterval = setInterval(updateTimer, 100);
-            
-            setTimeout(function() {
-                clearInterval(timerInterval);
-                const overlay = document.getElementById('orange-splash-overlay');
-                if (overlay) {
-                    overlay.style.opacity = '0';
-                    setTimeout(function() {
-                        overlay.remove();
-                    }, 500);
-                }
-            }, duration);
-        })();
-    
+    async function startApp() {
+
+        if (startButton.disabled) {
+            return;
+        }
+
+        startButton.disabled = true;
+
+        await requestAppFullscreen();
+
+        overlay.classList.add(
+            'splash-hidden'
+        );
+
+        setTimeout(() => {
+
+            overlay.style.display =
+                'none';
+
+        }, 450);
+
+    }
+
+
+    startButton.addEventListener(
+        'click',
+        startApp
+    );
+
+})();

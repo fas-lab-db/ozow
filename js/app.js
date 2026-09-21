@@ -294,7 +294,13 @@ async function checkForNewOrders() {
     try {
         const { data: latestOrder, error } = await supabase
             .from('orders')
-            .select('created_at')
+            .select(`
+                created_at,
+                order_number,
+                food_preferences,
+                excluded_addons,
+                special_food_instructions
+            `)
             .eq('shop_id', currentShop.id)
             .order('created_at', { ascending: false })
             .limit(1)
@@ -319,7 +325,9 @@ async function checkForNewOrders() {
                 
                 playNewOrderAlert();
                 
-                showNewOrderNotification();
+                showNewOrderNotification(
+                    latestOrder
+                );
                 
                 if (document.getElementById('shop-orders')?.classList.contains('active')) {
                     await loadShopOrders();
@@ -351,34 +359,195 @@ function playNewOrderAlert() {
     }
 }
 
-function showNewOrderNotification() {
-    const notification = document.createElement('div');
-    notification.id = 'new-order-notification';
+function showNewOrderNotification(
+    order = null
+) {
+
+    const allergyOptions = [
+        'Wheat / Gluten',
+        'Milk / Dairy',
+        'Eggs',
+        'Soy',
+        'Mustard',
+        'Sesame Seeds',
+        'Peanuts',
+        'Tree Nuts',
+        'Fish',
+        'Shellfish'
+    ];
+
+
+    const hasAllergy =
+        Array.isArray(
+            order?.food_preferences
+        ) &&
+        order.food_preferences.some(
+            preference =>
+                allergyOptions.includes(
+                    preference
+                )
+        );
+
+
+    const hasSpecialRequest =
+        (
+            Array.isArray(
+                order?.excluded_addons
+            ) &&
+            order.excluded_addons.length > 0
+        ) ||
+
+        (
+            order?.special_food_instructions &&
+            order.special_food_instructions.trim() !== ''
+        ) ||
+
+        (
+            Array.isArray(
+                order?.food_preferences
+            ) &&
+            order.food_preferences.some(
+                preference =>
+                    !allergyOptions.includes(
+                        preference
+                    )
+            )
+        );
+
+
+    const notification =
+        document.createElement('div');
+
+    notification.id =
+        'new-order-notification';
+
+
     notification.style.cssText = `
         position: fixed;
         top: 80px;
         right: 20px;
-        background: linear-gradient(135deg, var(--primary), var(--secondary));
+
+        background:
+            ${
+                hasAllergy
+                    ? '#dc3545'
+                    : 'linear-gradient(135deg, var(--primary), var(--secondary))'
+            };
+
         color: white;
         padding: 15px 20px;
         border-radius: 10px;
         z-index: 10000;
-        max-width: 300px;
+        max-width: 320px;
         animation: slideIn 0.3s ease-out;
         cursor: pointer;
+
+        ${
+            hasAllergy
+                ? 'border: 3px solid #8b0000;'
+                : ''
+        }
     `;
-    
+
+
     notification.innerHTML = `
-        <div style="display: flex; align-items: center; gap: 12px;">
-            <div style="font-size: 1.5rem;">
-                <i class="fas fa-bell"></i>
+
+        <div style="
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+        ">
+
+            <div style="
+                font-size: 1.5rem;
+                margin-top: 2px;
+            ">
+
+                <i class="fas ${
+                    hasAllergy
+                        ? 'fa-exclamation-triangle'
+                        : 'fa-bell'
+                }"></i>
+
             </div>
-            <div>
-                <strong>New Order Received!</strong>
-                <div style="font-size: 0.9rem; margin-top: 3px;">
+
+
+            <div style="flex: 1;">
+
+                <strong>
+                    ${
+                        hasAllergy
+                            ? '⚠ New Allergy Order!'
+                            : 'New Order Received!'
+                    }
+                </strong>
+
+
+                ${
+                    order?.order_number
+                        ? `
+                            <div style="
+                                font-size: 0.82rem;
+                                margin-top: 3px;
+                                font-weight: 600;
+                            ">
+                                Order ${escapeHtml(
+                                    order.order_number
+                                )}
+                            </div>
+                        `
+                        : ''
+                }
+
+
+                ${
+                    hasAllergy
+                        ? `
+                            <div style="
+                                margin-top: 7px;
+                                background: rgba(255,255,255,0.18);
+                                padding: 7px 9px;
+                                border-radius: 7px;
+                                font-size: 0.8rem;
+                                font-weight: 700;
+                            ">
+                                Allergy information included.
+                                Check before preparing.
+                            </div>
+                        `
+                        : ''
+                }
+
+
+                ${
+                    hasSpecialRequest &&
+                    !hasAllergy
+
+                        ? `
+                            <div style="
+                                margin-top: 7px;
+                                background: rgba(255,255,255,0.18);
+                                padding: 6px 8px;
+                                border-radius: 7px;
+                                font-size: 0.8rem;
+                            ">
+                                🍴 Special food request included
+                            </div>
+                        `
+
+                        : ''
+                }
+
+
+                <div style="
+                    font-size: 0.85rem;
+                    margin-top: 7px;
+                ">
                     Click to view new orders
                 </div>
+
             </div>
+
         </div>
     `;
     
@@ -623,7 +792,7 @@ function showNewOrderNotification() {
                 <div class="content">
 
                     <div class="hero">
-                        <img src="assets/images/devices.png" alt="Chef holding pizza">
+                        <img src="assets/images/box-image.png" alt="fasfood takeaway">
                     </div>
                     
                     <div class="text">
@@ -684,8 +853,6 @@ function showNewOrderNotification() {
                 max-width: 450px;
                 width: 100%;
                 text-align: center;
-                box-shadow: 0 20px 40px rgba(0, 0, 0, 0.08);
-                border: 1px solid rgba(255, 123, 49, 0.1);
                 animation: fadeInUp 0.5s ease;
             }
             
@@ -822,7 +989,6 @@ function showNewOrderNotification() {
             
             .visit-shop-btn:hover {
                 transform: translateY(-2px);
-                box-shadow: 0 8px 24px rgba(255, 123, 49, 0.3);
             }
             
             .visit-shop-btn:active {
@@ -1000,17 +1166,76 @@ function showNewOrderNotification() {
     
     updateHeaderText(currentShop);
     
-    const { data: menuItems, error } = await supabase
+    const [
+    menuResult,
+    extraAddonResult,
+    comboResult
+] = await Promise.all([
+
+    supabase
         .from('menu_items')
         .select('*')
         .eq('shop_id', currentShop.id)
         .eq('is_available', true)
-        .order('category');
-    
-    if (error) {
-        console.error("Error loading menu:", error);
-        return;
-    }
+        .order('category'),
+
+    supabase
+        .from('extra_addons')
+        .select('*')
+        .eq('shop_id', currentShop.id)
+        .eq('is_available', true)
+        .order('name'),
+
+    supabase
+        .from('combo_menus')
+        .select('*')
+        .eq('shop_id', currentShop.id)
+        .eq('is_available', true)
+        .order('created_at', {
+            ascending: false
+        })
+
+]);
+
+
+if (menuResult.error) {
+    console.error(
+        'Error loading menu:',
+        menuResult.error
+    );
+
+    return;
+}
+
+
+if (extraAddonResult.error) {
+    console.error(
+        'Error loading Extra Addons:',
+        extraAddonResult.error
+    );
+
+    return;
+}
+
+
+if (comboResult.error) {
+    console.error(
+        'Error loading Combo Meals:',
+        comboResult.error
+    );
+
+    return;
+}
+
+
+const menuItems =
+    menuResult.data || [];
+
+const extraAddons =
+    extraAddonResult.data || [];
+
+const comboMeals =
+    comboResult.data || [];
             
             const menuItemsWithAddons = await Promise.all(
                 menuItems.map(async (item) => {
@@ -1026,7 +1251,21 @@ function showNewOrderNotification() {
                 })
             );
             
-            const categories = [...new Set(menuItems.map(item => item.category))];
+            const categories = [
+    ...new Set([
+        ...menuItems.map(
+            item => item.category
+        ),
+
+        ...(extraAddons.length > 0
+            ? ['Add-ons']
+            : []),
+
+        ...(comboMeals.length > 0
+            ? ['Combo']
+            : [])
+    ])
+];
             
             const mainContent = document.getElementById('main-content');
             mainContent.innerHTML = `
@@ -1063,7 +1302,6 @@ function showNewOrderNotification() {
                 background: white;
                 border-radius: 20px;
                 margin-bottom: 16px;
-                border: 1px solid rgba(255, 123, 49, 0.2);
             }
 
             .location-icon {
@@ -1103,7 +1341,7 @@ function showNewOrderNotification() {
     </div>
     <div class="location-header">
             <i class="fas fa-map-marker-alt location-icon"></i>
-            <span class="province-name">Limpopo</span>
+            <span class="province-name">South Africa</span>
             <span class="location-badge">Live location</span>
         </div>
         
@@ -1154,8 +1392,69 @@ function showNewOrderNotification() {
             </div>
     </div>
     <div class="food-content">
-        <div class="food-title">${item.name}</div>
-        <div class="food-price">R${parseFloat(item.price).toFixed(2)}</div>
+        <div class="food-title">
+    ${item.name}
+
+    ${
+        item.on_sale &&
+        item.sale_price !== null &&
+        Number(item.sale_price) < Number(item.price)
+
+            ? `
+                <span style="
+                    background: #dc3545;
+                    color: white;
+                    font-size: 0.7rem;
+                    font-weight: 700;
+                    padding: 3px 8px;
+                    border-radius: 20px;
+                    margin-left: 6px;
+                    white-space: nowrap;
+                ">
+                    SALE
+                </span>
+            `
+            : ''
+    }
+</div>
+
+${
+    item.on_sale &&
+    item.sale_price !== null &&
+    Number(item.sale_price) < Number(item.price)
+
+        ? `
+            <div style="
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                flex-wrap: wrap;
+                margin-top: 4px;
+            ">
+
+            
+
+                <span style="
+                    text-decoration: line-through;
+                    color: #999;
+                    font-size: 0.85rem;
+                ">
+                    R${Number(item.price).toFixed(2)}
+                </span>
+
+                <span class="food-price">
+                    R${Number(item.sale_price).toFixed(2)}
+                </span>
+
+            </div>
+        `
+
+        : `
+            <div class="food-price">
+                R${Number(item.price).toFixed(2)}
+            </div>
+        `
+}
         
         ${item.description ? `
             <div class="food-desc">${item.description}</div>
@@ -1182,8 +1481,239 @@ function showNewOrderNotification() {
         </div>
     </div>
 </div>
-            `).join('')
+                        `).join('')
         }
+
+
+        ${extraAddons.map(addon => `
+
+            <div
+                class="food-card"
+                data-category="Add-ons"
+                data-item-id="${addon.id}"
+                data-item-type="extra-addon"
+            >
+
+                ${
+                    addon.badge
+                        ? `
+                            <div class="food-badge">
+                                ${escapeHtml(addon.badge)}
+                            </div>
+                        `
+                        : ''
+                }
+
+
+                <div class="food-image">
+
+                    ${
+                        currentShop.plan === 'paid' &&
+                        addon.image_url
+
+                            ? `
+                                <img
+                                    src="${addon.image_url}"
+                                    alt="${escapeHtml(addon.name)}"
+                                    loading="lazy"
+                                />
+                            `
+
+                            : `
+                                <i class="fas fa-plus-circle"></i>
+                            `
+                    }
+
+                </div>
+
+
+                <div class="food-content">
+
+                    <div class="food-title">
+                        ${escapeHtml(addon.name)}
+                    </div>
+
+
+                    <div class="food-price">
+                        R${Number(addon.price).toFixed(2)}
+                    </div>
+
+
+                    ${
+                        addon.flavour
+                            ? `
+                                <div class="food-desc">
+                                    Flavour:
+                                    ${escapeHtml(addon.flavour)}
+                                </div>
+                            `
+                            : ''
+                    }
+
+
+                    ${
+                        addon.description
+                            ? `
+                                <div class="food-desc">
+                                    ${escapeHtml(addon.description)}
+                                </div>
+                            `
+                            : ''
+                    }
+
+
+                    <div class="food-bottom-row">
+
+                        <div class="food-left-group">
+
+                            <div class="food-category">
+                                Add-ons
+                            </div>
+
+                        </div>
+
+
+                        <button class="btn-add">
+                            +
+                        </button>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+        `).join('')}
+
+
+        ${comboMeals.map(combo => `
+
+            <div
+                class="food-card"
+                data-category="Combo"
+                data-item-id="${combo.id}"
+                data-item-type="combo"
+            >
+
+                <div class="food-image">
+
+                    ${
+                        currentShop.plan === 'paid' &&
+                        combo.image_url
+
+                            ? `
+                                <img
+                                    src="${combo.image_url}"
+                                    alt="${escapeHtml(combo.name)}"
+                                    loading="lazy"
+                                />
+                            `
+
+                            : `
+                                <i class="fas fa-box"></i>
+                            `
+                    }
+
+
+                    <div class="time-estimate">
+                        <span>
+                            ${escapeHtml(
+                                combo.preparation_time ||
+                                '20-30'
+                            )} min
+                        </span>
+                    </div>
+
+                </div>
+
+
+                <div class="food-content">
+
+                    <div class="food-title">
+                ${escapeHtml(combo.name)}
+
+                <span style="
+                    background: #dc3545;
+                    color: white;
+                    font-size: 0.7rem;
+                    font-weight: 700;
+                    padding: 3px 8px;
+                    border-radius: 20px;
+                    margin-left: 6px;
+                    white-space: nowrap;
+                ">
+                    SALE
+                </span>
+            </div>
+
+
+                    <div style="
+                        display: flex;
+                        gap: 8px;
+                        align-items: center;
+                        margin-top: 4px;
+                    ">
+                        <span class="food-price">
+                            R${Number(
+                                combo.sale_price
+                            ).toFixed(2)}
+                        </span>
+
+                    </div>
+
+
+                    ${
+                        combo.description
+                            ? `
+                                <div class="food-desc">
+                                    ${escapeHtml(
+                                        combo.description
+                                    )}
+                                </div>
+                            `
+                            : ''
+                    }
+
+
+                    <div class="food-bottom-row">
+
+                        <div class="food-left-group">
+
+                            <div class="food-category">
+                                Combo
+                            </div>
+
+                            ${
+                                combo.rating
+                                    ? `
+                                        <div class="food-rating">
+                                            <span class="rating-star">
+                                                ★
+                                            </span>
+
+                                            <span>
+                                                ${combo.rating} rating
+                                            </span>
+                                        </div>
+                                    `
+                                    : ''
+                            }
+
+                        </div>
+
+
+                        <button class="btn-add">
+                            +
+                        </button>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+        `).join('')}
+
     </div>
 `;
 
@@ -1263,9 +1793,10 @@ if (categoriesContainer) {
             
             document.getElementById('bottom-nav').style.display = 'flex';
 
-            setTimeout(() => {
-    showAdvertsToCustomer(); 
-    loadActiveShopAdverts(); 
+setTimeout(() => {
+
+    showAdvertsToCustomer();
+
 }, 1000);
 
             setTimeout(hideLoading, 300);
@@ -1871,15 +2402,15 @@ function applyShopColors(shop) {
                     <p>Welcome to the developer admin panel.</p>
                     
                     <div class="stats-container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-top: 20px;">
-                        <div style="background: white; padding: 20px; border-radius: 10px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
+                        <div style="background: white; padding: 20px; border-radius: 10px; text-align: center; ">
                             <h3 id="total-shops">0</h3>
                             <p>Total Shops</p>
                         </div>
-                        <div style="background: white; padding: 20px; border-radius: 10px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
+                        <div style="background: white; padding: 20px; border-radius: 10px; text-align: center; ">
                             <h3 id="total-customers">0</h3>
                             <p>Total Customers</p>
                         </div>
-                        <div style="background: white; padding: 20px; border-radius: 10px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
+                        <div style="background: white; padding: 20px; border-radius: 10px; text-align: center; ">
                             <h3 id="total-menu-items">0</h3>
                             <p>Menu Items</p>
                         </div>
@@ -2077,7 +2608,12 @@ function applyShopColors(shop) {
                         <button type="button" class="btn-secondary" onclick="addMenuItemForm()" style="margin: 15px 0;">Add Another Menu Item</button>
                     </div>
                     
-                    <button class="btn-primary" id="create-shop-btn">Create Shop with Menu</button>
+                    <button
+                        class="btn-primary"
+                        id="create-shop-btn"
+                    >
+                        Create Shop
+                    </button>
                     
                     <h3 style="margin-top: 30px;">Existing Shops</h3>
                     <div class="shop-list-admin" id="shops-list">
@@ -2262,9 +2798,32 @@ function applyShopColors(shop) {
                                 <label class="form-label">Category *</label>
                                 <input type="text" class="form-input" id="new-item-category">
                             </div>
-                            <div class="form-group">
-                                <label class="form-label">Image URL</label>
-                                <input type="text" class="form-input" id="new-item-image">
+                            <div
+                                class="form-group"
+                                id="dev-menu-image-group"
+                                style="display: none;"
+                            >
+
+                                <label class="form-label">
+                                    Menu Image
+                                </label>
+
+                                <input
+                                    type="file"
+                                    class="form-input"
+                                    id="new-item-image"
+                                    accept=".jpg,image/jpeg"
+                                >
+
+                                <small style="
+                                    display: block;
+                                    margin-top: 6px;
+                                    color: #666;
+                                ">
+                                    Paid shops only.
+                                    JPG format, maximum 300 KB.
+                                </small>
+
                             </div>
                             <div class="form-group">
                                 <label class="form-label">Badge (Optional)</label>
@@ -2336,15 +2895,73 @@ document.getElementById('create-shop-advert-btn').addEventListener('click', crea
             
             document.getElementById('create-shop-btn').addEventListener('click', createShopWithMenu);
             
-            document.getElementById('shop-select-menu').addEventListener('change', function() {
-                const shopId = this.value;
-                if (shopId) {
-                    document.getElementById('shop-menu-content').style.display = 'block';
-                    loadShopMenuForDev(shopId);
-                } else {
-                    document.getElementById('shop-menu-content').style.display = 'none';
+            document
+    .getElementById(
+        'shop-select-menu'
+    )
+    .addEventListener(
+        'change',
+        function() {
+
+            const shopId =
+                Number(
+                    this.value
+                );
+
+
+            const menuContent =
+                document.getElementById(
+                    'shop-menu-content'
+                );
+
+
+            const imageGroup =
+                document.getElementById(
+                    'dev-menu-image-group'
+                );
+
+
+            if (!shopId) {
+
+                menuContent.style.display =
+                    'none';
+
+                if (imageGroup) {
+                    imageGroup.style.display =
+                        'none';
                 }
-            });
+
+                return;
+            }
+
+
+            const selectedShop =
+                allShops.find(
+                    shop =>
+                        Number(shop.id) ===
+                        shopId
+                );
+
+
+            menuContent.style.display =
+                'block';
+
+
+            if (imageGroup) {
+
+                imageGroup.style.display =
+                    selectedShop?.plan ===
+                    'paid'
+                        ? 'block'
+                        : 'none';
+            }
+
+
+            loadShopMenuForDev(
+                shopId
+            );
+        }
+    );
             
             document.getElementById('add-new-menu-item-btn').addEventListener('click', addNewMenuItem);
         }
@@ -2805,12 +3422,49 @@ function updateColorPreview() {
                     </div>
                 </div>
             </div>
-            <div style="display: flex; gap: 10px;">
-                <button class="btn-secondary" onclick="editShopColors(${shop.id})">
-                    <i class="fas fa-palette"></i> Edit Colors
+            <div style="
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+">
+
+    ${
+        shop.plan === 'paid' &&
+        String(
+            shop.subscription_status || ''
+        ).toLowerCase() !== 'active'
+
+            ? `
+                <button
+                    class="btn-primary"
+                    onclick="openDevManualPayment(${shop.id})"
+                >
+                    <i class="fas fa-money-bill-wave"></i>
+                    Mark as Paid
                 </button>
-                <button class="btn-danger" onclick="deleteShop(${shop.id})">Delete</button>
-            </div>
+            `
+
+            : ''
+    }
+
+
+    <button
+        class="btn-secondary"
+        onclick="editShopColors(${shop.id})"
+    >
+        <i class="fas fa-palette"></i>
+        Edit Colors
+    </button>
+
+
+    <button
+        class="btn-danger"
+        onclick="deleteShop(${shop.id})"
+    >
+        Delete
+    </button>
+
+</div>
         </div>
     `).join('');
     
@@ -2818,8 +3472,772 @@ function updateColorPreview() {
     shopSelect.innerHTML = '<option value="">Select a shop</option>' + 
         shops.map(shop => `<option value="${shop.id}">${shop.name}</option>`).join('');
 
-    populateReminderShopSelect();
+        populateReminderShopSelect();
 }
+
+
+window.openDevManualPayment =
+async function(shopId) {
+
+    try {
+
+        const {
+            data: shop,
+            error
+        } = await supabase
+            .from('shops')
+            .select(`
+                id,
+                name,
+                email,
+                phone_number,
+                plan,
+                subscription_status,
+                next_billing_date,
+                paid_until
+            `)
+            .eq('id', shopId)
+            .single();
+
+
+        if (error) {
+            throw error;
+        }
+
+
+        if (!shop) {
+
+            alert(
+                'Shop could not be found.'
+            );
+
+            return;
+        }
+
+
+        if (shop.plan !== 'paid') {
+
+            alert(
+                'Manual subscription payments are only available for Paid shops.'
+            );
+
+            return;
+        }
+
+
+        const status =
+            String(
+                shop.subscription_status || ''
+            ).toLowerCase();
+
+
+        if (status === 'active') {
+
+            alert(
+                'This shop is already marked as paid and active.'
+            );
+
+            return;
+        }
+
+
+        const now =
+            new Date();
+
+
+        const currentBillingMonth =
+            `${now.getFullYear()}-` +
+            `${String(
+                now.getMonth() + 1
+            ).padStart(2, '0')}`;
+
+
+        let billingMonth =
+            currentBillingMonth;
+
+
+        if (shop.next_billing_date) {
+
+            const scheduledMonth =
+                String(
+                    shop.next_billing_date
+                ).slice(0, 7);
+
+
+            if (
+                scheduledMonth >=
+                currentBillingMonth
+            ) {
+
+                billingMonth =
+                    scheduledMonth;
+            }
+        }
+
+
+        const modal =
+            document.createElement('div');
+
+        modal.className =
+            'modal-overlay active';
+
+
+        modal.innerHTML = `
+
+            <div
+                class="page-modal"
+                style="max-width: 550px;"
+            >
+
+                <div class="page-header">
+
+                    <h2>
+                        Manual Subscription Payment
+                    </h2>
+
+
+                    <button
+                        type="button"
+                        class="modal-close"
+                        onclick="
+                            this
+                                .closest('.modal-overlay')
+                                .remove()
+                        "
+                    >
+                        <i class="fas fa-times"></i>
+                    </button>
+
+                </div>
+
+
+                <div class="page-content">
+
+
+                    <div style="
+                        background: #f8f9fa;
+                        border: 1px solid #e5e7eb;
+                        border-radius: 12px;
+                        padding: 15px;
+                        margin-bottom: 20px;
+                    ">
+
+                        <strong style="
+                            display: block;
+                            font-size: 1.05rem;
+                            margin-bottom: 5px;
+                        ">
+                            ${escapeHtml(shop.name)}
+                        </strong>
+
+
+                        <div style="
+                            color: #666;
+                            font-size: 0.85rem;
+                        ">
+                            Current Status:
+                            <strong>
+                                ${escapeHtml(
+                                    shop.subscription_status ||
+                                    'Unknown'
+                                )}
+                            </strong>
+                        </div>
+
+
+                        ${
+                            shop.email
+
+                                ? `
+                                    <div style="
+                                        color: #666;
+                                        font-size: 0.85rem;
+                                        margin-top: 4px;
+                                    ">
+                                        ${escapeHtml(shop.email)}
+                                    </div>
+                                `
+
+                                : ''
+                        }
+
+
+                        ${
+                            shop.phone_number
+
+                                ? `
+                                    <div style="
+                                        color: #666;
+                                        font-size: 0.85rem;
+                                        margin-top: 4px;
+                                    ">
+                                        ${escapeHtml(
+                                            shop.phone_number
+                                        )}
+                                    </div>
+                                `
+
+                                : ''
+                        }
+
+                    </div>
+
+
+                    <div style="
+                        background: #fff3cd;
+                        border: 1px solid #ffe69c;
+                        color: #664d03;
+                        padding: 12px;
+                        border-radius: 10px;
+                        margin-bottom: 20px;
+                        line-height: 1.5;
+                        font-size: 0.85rem;
+                    ">
+
+                        <i class="fas fa-info-circle"></i>
+
+                        Only confirm this payment after you
+                        have verified that the shop's payment
+                        has been received.
+
+                    </div>
+
+
+                    <div class="form-group">
+
+                        <label class="form-label">
+                            Billing Month *
+                        </label>
+
+                        <input
+                            type="month"
+                            class="form-input"
+                            id="dev-manual-payment-month"
+                            value="${billingMonth}"
+                            required
+                        >
+
+                    </div>
+
+
+                    <div class="form-group">
+
+                        <label class="form-label">
+                            Amount Received (Rands) *
+                        </label>
+
+                        <input
+                            type="number"
+                            class="form-input"
+                            id="dev-manual-payment-amount"
+                            value="99"
+                            min="0"
+                            step="0.01"
+                            required
+                        >
+
+                    </div>
+
+
+                    <div class="form-group">
+
+                        <label class="form-label">
+                            Payment Method *
+                        </label>
+
+                        <select
+                            class="form-input"
+                            id="dev-manual-payment-method"
+                        >
+
+                            <option value="bank_transfer">
+                                Bank Transfer / EFT
+                            </option>
+
+                            <option value="cash">
+                                Cash
+                            </option>
+
+                            <option value="bank_deposit">
+                                Bank Deposit
+                            </option>
+
+                            <option value="other">
+                                Other
+                            </option>
+
+                        </select>
+
+                    </div>
+
+
+                    <div class="form-group">
+
+                        <label class="form-label">
+                            Payment Reference *
+                        </label>
+
+                        <input
+                            type="text"
+                            class="form-input"
+                            id="dev-manual-payment-reference"
+                            maxlength="150"
+                            placeholder="e.g. EFT reference or deposit reference"
+                            required
+                        >
+
+                    </div>
+
+
+                    <div class="form-group">
+
+                        <label class="form-label">
+                            Note (Optional)
+                        </label>
+
+                        <textarea
+                            class="form-textarea"
+                            id="dev-manual-payment-note"
+                            maxlength="500"
+                            rows="3"
+                            placeholder="e.g. Payment confirmed from bank statement."
+                        ></textarea>
+
+                    </div>
+
+
+                    <label style="
+                        display: flex;
+                        gap: 10px;
+                        align-items: flex-start;
+                        background: #f8f9fa;
+                        padding: 12px;
+                        border-radius: 10px;
+                        margin-bottom: 20px;
+                        cursor: pointer;
+                    ">
+
+                        <input
+                            type="checkbox"
+                            id="dev-manual-payment-confirmed"
+                            style="margin-top: 3px;"
+                        >
+
+                        <span style="
+                            font-size: 0.85rem;
+                            line-height: 1.5;
+                        ">
+                            I confirm that I have verified
+                            this payment was received.
+                        </span>
+
+                    </label>
+
+
+                    <button
+                        type="button"
+                        class="btn-primary"
+                        id="confirm-dev-manual-payment-btn"
+                        style="width: 100%;"
+                    >
+
+                        <i class="fas fa-check-circle"></i>
+
+                        Confirm Manual Payment
+
+                    </button>
+
+                </div>
+
+            </div>
+        `;
+
+
+        document.body.appendChild(
+            modal
+        );
+
+
+        document
+            .getElementById(
+                'confirm-dev-manual-payment-btn'
+            )
+            .addEventListener(
+                'click',
+                async () => {
+
+                    await saveDevManualPayment(
+                        shop,
+                        modal
+                    );
+
+                }
+            );
+
+
+    } catch (error) {
+
+        console.error(
+            'Unable to open manual payment:',
+            error
+        );
+
+
+        alert(
+            'Unable to open manual payment: ' +
+            error.message
+        );
+    }
+};
+
+
+async function saveDevManualPayment(shop, modal) {
+
+    const confirmed =
+        document.getElementById(
+            'dev-manual-payment-confirmed'
+        ).checked;
+
+    if (!confirmed) {
+        alert(
+            'Please confirm that the payment was received.'
+        );
+        return;
+    }
+
+
+    const amount =
+        Number(
+            document.getElementById(
+                'dev-manual-payment-amount'
+            ).value
+        );
+
+    const reference =
+        document.getElementById(
+            'dev-manual-payment-reference'
+        ).value.trim();
+
+
+    if (!amount || amount <= 0) {
+        alert('Enter the amount received.');
+        return;
+    }
+
+
+    if (!reference) {
+        alert('Enter the payment reference.');
+        return;
+    }
+
+
+    const paymentMonth =
+    document.getElementById(
+        'dev-manual-payment-month'
+    ).value;
+
+
+if (!paymentMonth) {
+    alert('Select the billing month.');
+    return;
+}
+
+
+const billingMonth =
+    `${paymentMonth}-01`;
+
+
+const {
+    data: alreadyPaid,
+    error: alreadyPaidError
+} = await supabase
+    .from('shop_subscription_payments')
+    .select('id')
+    .eq(
+        'shop_id',
+        shop.id
+    )
+    .eq(
+        'billing_month',
+        billingMonth
+    )
+    .eq(
+        'status',
+        'paid'
+    )
+    .maybeSingle();
+
+
+if (alreadyPaidError) {
+    throw alreadyPaidError;
+}
+
+
+if (alreadyPaid) {
+
+    alert(
+        'This subscription month has already been paid.'
+    );
+
+    return;
+}
+    const [year, month] =
+        paymentMonth
+            .split('-')
+            .map(Number);
+
+
+    const paidUntil =
+        new Date(
+            year,
+            month,
+            0
+        );
+
+
+    const nextBilling =
+        new Date(
+            year,
+            month,
+            1
+        );
+
+
+const formatDate =
+    date =>
+        `${date.getFullYear()}-` +
+        `${String(
+            date.getMonth() + 1
+        ).padStart(2, '0')}-` +
+        `${String(
+            date.getDate()
+        ).padStart(2, '0')}`;
+
+
+    const button =
+        document.getElementById(
+            'confirm-dev-manual-payment-btn'
+        );
+
+
+    try {
+
+        button.disabled = true;
+
+        button.innerHTML = `
+            <i class="fas fa-spinner fa-spin"></i>
+            Confirming...
+        `;
+
+
+        const paidAt =
+    new Date().toISOString();
+
+
+const invoiceNumber =
+    `FAS-MAN-${shop.id}-${paymentMonth.replace('-', '')}`;
+
+
+const manualReference =
+    `MANUAL-${reference}`;
+
+const {
+    data: existingPayment,
+    error: existingPaymentError
+} = await supabase
+    .from('shop_subscription_payments')
+    .select('*')
+    .eq('shop_id', shop.id)
+    .eq('billing_month', billingMonth)
+    .maybeSingle();
+
+
+if (existingPaymentError) {
+    throw existingPaymentError;
+}
+
+
+let manualPayment;
+
+
+if (existingPayment) {
+
+    if (
+        String(
+            existingPayment.status || ''
+        ).toLowerCase() === 'paid'
+    ) {
+
+        alert(
+            'This subscription month has already been paid.'
+        );
+
+        return;
+    }
+
+
+    const {
+        data,
+        error
+    } = await supabase
+        .from('shop_subscription_payments')
+        .update({
+
+            amount:
+                amount,
+
+            status:
+                'paid',
+
+            paid_at:
+                paidAt,
+
+            transaction_reference:
+                manualReference,
+
+            payment_reference:
+                reference,
+
+            ozow_transaction_id:
+                null,
+
+            invoice_number:
+                invoiceNumber,
+
+            updated_at:
+                paidAt
+
+        })
+        .eq('id', existingPayment.id)
+        .select()
+        .single();
+
+
+    if (error) {
+        throw error;
+    }
+
+
+    manualPayment = data;
+
+} else {
+
+    const {
+        data,
+        error
+    } = await supabase
+        .from('shop_subscription_payments')
+        .insert([
+            {
+                shop_id:
+                    shop.id,
+
+                billing_month:
+                    billingMonth,
+
+                amount:
+                    amount,
+
+                status:
+                    'paid',
+
+                paid_at:
+                    paidAt,
+
+                transaction_reference:
+                    manualReference,
+
+                payment_reference:
+                    reference,
+
+                invoice_number:
+                    invoiceNumber
+            }
+        ])
+        .select()
+        .single();
+
+
+    if (error) {
+        throw error;
+    }
+
+
+    manualPayment = data;
+}
+
+
+// -----------------------------------------
+// UPDATE SHOP SUBSCRIPTION
+// -----------------------------------------
+
+const { error } =
+    await supabase
+        .from('shops')
+                .update({
+
+                    subscription_status:
+                        'active',
+
+                    last_payment_at:
+                    paidAt,
+
+                    paid_until:
+                        formatDate(
+                            paidUntil
+                        ),
+
+                    next_billing_date:
+                        formatDate(
+                            nextBilling
+                        )
+
+                })
+                .eq(
+                    'id',
+                    shop.id
+                );
+
+
+        if (error) {
+            throw error;
+        }
+
+
+        modal.remove();
+
+
+        showToast(
+            `${shop.name} payment confirmed`
+        );
+
+
+        await loadAllShops();
+
+
+    } catch (error) {
+
+        console.error(
+            'Manual payment error:',
+            error
+        );
+
+
+        alert(
+            'Unable to confirm payment: ' +
+            error.message
+        );
+
+
+        button.disabled = false;
+
+        button.innerHTML = `
+            <i class="fas fa-check-circle"></i>
+            Confirm Manual Payment
+        `;
+    }
+}
+
 
 window.editShopColors = async function(shopId) {
     try {
@@ -3048,12 +4466,29 @@ async function saveShopColors(shopId) {
 
         async function addNewMenuItem() {
             const shopId = document.getElementById('shop-select-menu').value;
+            const selectedShop =
+            allShops.find(
+                shop =>
+                    Number(shop.id) ===
+                    Number(shopId)
+            );
             const name = document.getElementById('new-item-name').value;
             const description = document.getElementById('new-item-desc').value;
             const price = parseFloat(document.getElementById('new-item-price').value);
             const category = document.getElementById('new-item-category').value;
-            const imageInput = document.getElementById('new-item-image');
-            const imageFile = imageInput.files?.[0] || null;
+            const imageInput =
+                document.getElementById(
+                    'new-item-image'
+                );
+
+
+            const imageFile =
+                selectedShop?.plan === 'paid'
+                    ? (
+                        imageInput?.files?.[0] ||
+                        null
+                    )
+                    : null;
             const badge = document.getElementById('new-item-badge').value;
             const rating = document.getElementById('new-item-rating').value ? parseFloat(document.getElementById('new-item-rating').value) : null;
             const preparationTime = document.getElementById('new-item-prep-time').value;
@@ -3539,11 +4974,6 @@ if (imageFile) {
         }
     }
     
-    if (menuItems.length === 0) {
-        alert('Please add at least one valid menu item');
-        return;
-    }
-    
     try {
         const { data: shop, error: shopError } = await supabase
             .from('shops')
@@ -3610,7 +5040,7 @@ if (imageFile) {
             }
         }
         
-        alert('Shop created successfully with custom colors!');
+        alert('Shop created successfully!');
         
         document.getElementById('shop-name').value = '';
         document.getElementById('shop-phone').value = '';
@@ -3726,22 +5156,22 @@ if (imageFile) {
     </div>
     
     <div class="stats-container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 15px; margin-top: 20px;">
-        <div style="background: white; padding: 25px; border-radius: 10px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.05); border-left: 4px solid var(--primary);">
+        <div style="background: white; padding: 25px; border-radius: 10px; text-align: center;  border-left: 4px solid var(--primary);">
             <h3 id="shop-customers-count" style="font-size: 2rem; margin: 0; color: var(--primary);">0</h3>
             <p style="margin: 10px 0 0 0; color: #666;">Registered Customers</p>
         </div>
         
-        <div style="background: white; padding: 25px; border-radius: 10px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.05); border-left: 4px solid var(--accent);">
+        <div style="background: white; padding: 25px; border-radius: 10px; text-align: center;  border-left: 4px solid var(--accent);">
             <h3 id="pending-orders-count" style="font-size: 2rem; margin: 0; color: var(--accent);">0</h3>
             <p style="margin: 10px 0 0 0; color: #666;">Active Orders</p>
         </div>
         
-        <div style="background: white; padding: 25px; border-radius: 10px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.05); border-left: 4px solid #17a2b8;">
+        <div style="background: white; padding: 25px; border-radius: 10px; text-align: center;  border-left: 4px solid #17a2b8;">
             <h3 id="total-orders-count" style="font-size: 2rem; margin: 0; color: #17a2b8;">0</h3>
             <p style="margin: 10px 0 0 0; color: #666;">Total Orders</p>
         </div>
         
-        <div style="background: white; padding: 25px; border-radius: 10px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.05); border-left: 4px solid #28a745;">
+        <div style="background: white; padding: 25px; border-radius: 10px; text-align: center;  border-left: 4px solid #28a745;">
             <h3 id="total-revenue" style="font-size: 2rem; margin: 0; color: #28a745;">R0.00</h3>
             <p style="margin: 10px 0 0 0; color: #666;">Total Revenue</p>
             <small style="color: #888; font-size: 0.8rem;">(Excluding cancelled)</small>
@@ -3749,28 +5179,28 @@ if (imageFile) {
     </div>
     
     <div class="stats-container" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-top: 15px;">
-        <div style="background: white; padding: 20px; border-radius: 10px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
+        <div style="background: white; padding: 20px; border-radius: 10px; text-align: center; ">
             <h3 id="completed-orders-count" style="font-size: 1.5rem; margin: 0; color: #28a745;">0</h3>
             <p style="margin: 10px 0 0 0; color: #666; font-size: 0.9rem;">Completed Orders</p>
         </div>
         
-        <div style="background: white; padding: 20px; border-radius: 10px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
+        <div style="background: white; padding: 20px; border-radius: 10px; text-align: center; ">
             <h3 id="cancelled-orders-count" style="font-size: 1.5rem; margin: 0; color: #dc3545;">0</h3>
             <p style="margin: 10px 0 0 0; color: #666; font-size: 0.9rem;">Cancelled Orders</p>
         </div>
         
-        <div style="background: white; padding: 20px; border-radius: 10px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
+        <div style="background: white; padding: 20px; border-radius: 10px; text-align: center; ">
             <h3 id="average-order-value" style="font-size: 1.5rem; margin: 0; color: #ffc107;">R0.00</h3>
             <p style="margin: 10px 0 0 0; color: #666; font-size: 0.9rem;">Average Order Value</p>
         </div>
         
-        <div style="background: white; padding: 20px; border-radius: 10px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
+        <div style="background: white; padding: 20px; border-radius: 10px; text-align: center; ">
             <h3 id="top-selling-item" style="font-size: 1.5rem; margin: 0; color: var(--secondary);">-</h3>
             <p style="margin: 10px 0 0 0; color: #666; font-size: 0.9rem;">Top Selling Item</p>
         </div>
     </div>
     
-    <div style="background: white; padding: 25px; border-radius: 10px; margin-top: 25px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
+    <div style="background: white; padding: 25px; border-radius: 10px; margin-top: 25px; ">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
             <h3 style="margin: 0;">Recent Orders</h3>
             <a href="#" onclick="loadShopAdminSection('shop-orders'); return false;" style="color: var(--primary); text-decoration: none;">
@@ -3914,15 +5344,53 @@ if (imageFile) {
 
         <div class="admin-section" id="shop-menu-editor">
 
-    <h2>Menu Management</h2>
-
-    <p style="
-        color: #666;
-        margin-bottom: 20px;
+    <div style="
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 15px;
+        margin-bottom: 8px;
+        flex-wrap: wrap;
     ">
-        You can edit your existing menu items.
-        Adding or deleting menu items is managed by FasFoods.
-    </p>
+
+        <div>
+            <h2 style="margin: 0;">
+                Menu Management
+            </h2>
+
+            <p style="
+                color: #666;
+                margin: 6px 0 0;
+            ">
+                Add and manage up to 20 menu items.
+            </p>
+        </div>
+
+        <button
+            type="button"
+            id="shop-add-menu-item-btn"
+            class="btn-primary"
+            style="
+                width: auto;
+                padding: 10px 18px;
+            "
+        >
+            <i class="fas fa-plus"></i>
+            Add Menu Item
+        </button>
+
+    </div>
+
+    <div
+        id="shop-menu-limit-info"
+        style="
+            margin-bottom: 20px;
+            font-size: 0.85rem;
+            color: #666;
+        "
+    >
+        Menu limit: 20 items
+    </div>
 
     ${
         currentShop.plan === 'free'
@@ -3951,6 +5419,171 @@ if (imageFile) {
         </div>
 
     </div>
+
+    <div style="
+    border-top: 2px solid #eee;
+    margin-top: 35px;
+    padding-top: 25px;
+">
+
+    <div style="
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 15px;
+        flex-wrap: wrap;
+        margin-bottom: 8px;
+    ">
+
+        <div>
+
+            <h2 style="margin: 0;">
+                Extra Addons
+            </h2>
+
+            <p style="
+                color: #666;
+                margin: 6px 0 0;
+                font-size: 0.9rem;
+            ">
+                Create separately priced extras such as Coke,
+                Cheese, Russian, Polony and other additions.
+            </p>
+
+        </div>
+
+        <button
+            type="button"
+            id="shop-add-extra-addon-btn"
+            class="btn-primary"
+            style="
+                width: auto;
+                padding: 10px 18px;
+            "
+        >
+            <i class="fas fa-plus"></i>
+            Add Extra Addon
+        </button>
+
+    </div>
+
+
+    <div style="
+        background: #f8f9fa;
+        border: 1px solid #eee;
+        padding: 12px 14px;
+        border-radius: 10px;
+        color: #666;
+        font-size: 0.85rem;
+        margin: 15px 0 20px;
+    ">
+        <i class="fas fa-info-circle"></i>
+
+        Extra Addons automatically appear under the
+        <strong>Add-ons</strong> category for customers.
+    </div>
+
+
+    <div id="shop-extra-addons-list">
+
+        <div class="empty-state">
+            <i class="fas fa-plus-circle"></i>
+            <p>Loading Extra Addons...</p>
+        </div>
+
+    </div>
+
+</div>
+
+
+<div style="
+    border-top: 2px solid #eee;
+    margin-top: 35px;
+    padding-top: 25px;
+">
+
+    <div style="
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 15px;
+        flex-wrap: wrap;
+        margin-bottom: 8px;
+    ">
+
+        <div>
+
+            <h2 style="margin: 0;">
+                Combo Meals
+            </h2>
+
+            <p style="
+                color: #666;
+                margin: 6px 0 0;
+                font-size: 0.9rem;
+            ">
+                Create promotional combos using menu items
+                and Extra Addons.
+            </p>
+
+        </div>
+
+
+        <button
+            type="button"
+            id="shop-add-combo-btn"
+            class="btn-primary"
+            style="
+                width: auto;
+                padding: 10px 18px;
+            "
+        >
+            <i class="fas fa-plus"></i>
+            Add Combo
+        </button>
+
+    </div>
+
+
+    <div style="
+        background: #fff3cd;
+        border: 1px solid #ffe69c;
+        color: #664d03;
+        padding: 12px 14px;
+        border-radius: 10px;
+        margin: 15px 0 20px;
+        font-size: 0.85rem;
+    ">
+
+        <i class="fas fa-tags"></i>
+
+        Combo meals automatically display a
+        <strong>SALE</strong> badge.
+
+        A combo can contain up to
+        <strong>5 menu items</strong>
+        and
+        <strong>5 Extra Addons</strong>.
+
+    </div>
+
+
+    <div id="shop-combo-list">
+
+        <div class="empty-state">
+
+            <i class="fas fa-box"></i>
+
+            <p>
+                Loading Combo Meals...
+            </p>
+
+        </div>
+
+    </div>
+
+</div>
+
 
 </div>
         
@@ -4041,6 +5674,37 @@ if (imageFile) {
                 Allow customers to choose delivery option
             </small>
         </div>
+
+        <div class="form-group">
+
+    <label
+        class="form-label"
+        style="
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        "
+    >
+
+        <input
+            type="checkbox"
+            id="free-delivery"
+            ${currentShop.free_delivery ? 'checked' : ''}
+        >
+
+        Offer Free Delivery
+
+    </label>
+
+    <small style="
+        color: #666;
+        display: block;
+        margin-top: 5px;
+    ">
+        Customers will not be charged a delivery fee.
+    </small>
+
+</div>
         
         <div class="form-group" id="delivery-charge-group" style="${currentShop.delivery_enabled === false ? 'display: none;' : ''}">
             <label class="form-label">Delivery Charge (within 2km)</label>
@@ -4165,7 +5829,6 @@ if (imageFile) {
             background: white;
             padding: 20px;
             border-radius: 12px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
         ">
             <div style="
                 color: #777;
@@ -4188,7 +5851,6 @@ if (imageFile) {
             background: white;
             padding: 20px;
             border-radius: 12px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
         ">
             <div style="
                 color: #777;
@@ -4211,7 +5873,6 @@ if (imageFile) {
             background: white;
             padding: 20px;
             border-radius: 12px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
         ">
             <div style="
                 color: #777;
@@ -4234,7 +5895,6 @@ if (imageFile) {
             background: white;
             padding: 20px;
             border-radius: 12px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
         ">
             <div style="
                 color: #777;
@@ -4260,7 +5920,6 @@ if (imageFile) {
         border-radius: 12px;
         padding: 22px;
         margin-bottom: 25px;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
     ">
 
         <div style="
@@ -4328,7 +5987,6 @@ if (imageFile) {
         background: white;
         border-radius: 12px;
         padding: 22px;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
     ">
 
         <div style="
@@ -4881,6 +6539,28 @@ let query = supabase
             const orderTime = new Date(order.created_at);
             const saOrderTime = formatSATime(orderTime);
             
+            const allergyOptions = [
+    'Wheat / Gluten',
+    'Milk / Dairy',
+    'Eggs',
+    'Soy',
+    'Mustard',
+    'Sesame Seeds',
+    'Peanuts',
+    'Tree Nuts',
+    'Fish',
+    'Shellfish'
+];
+
+
+const hasAllergy =
+    Array.isArray(order.food_preferences) &&
+    order.food_preferences.some(
+        preference =>
+            allergyOptions.includes(
+                preference
+            )
+    );
             let scheduledBadge = '';
             if (isScheduled) {
                 const saScheduledTime = formatSATime(scheduledDate);
@@ -4894,7 +6574,32 @@ let query = supabase
             }
             
             return `
-                <div class="order-card" style="background: white; border-radius: 10px; padding: 20px; margin-bottom: 15px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); border-left: 4px solid ${getStatusColor(order.status)} ${isScheduled ? '; border-top: 3px solid #ffc107' : ''}">
+    <div
+        class="order-card"
+        style="
+            background:
+                ${hasAllergy ? '#fff5f5' : 'white'};
+
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 15px;
+
+            border-left:
+                ${hasAllergy
+                    ? '6px solid #dc3545'
+                    : `4px solid ${getStatusColor(order.status)}`};
+
+            ${
+                hasAllergy
+                    ? 'border-top: 2px solid #dc3545; border-right: 2px solid #dc3545; border-bottom: 2px solid #dc3545;'
+                    : (
+                        isScheduled
+                            ? 'border-top: 3px solid #ffc107;'
+                            : ''
+                    )
+            }
+        "
+    >
                     <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 15px;">
                         <div style="flex: 1;">
                             <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
@@ -4941,14 +6646,109 @@ let query = supabase
                     <div style="display: grid; grid-template-columns: 1fr auto; gap: 15px; align-items: center;">
                         <div>
                             <div style="color: #666; font-size: 0.9rem; margin-bottom: 5px;">
-                                <strong>Items:</strong> 
-                                ${order.items.map(item => `${item.name} (×${item.quantity})`).join(', ')}
-                            </div>
-                            <div style="color: #666; font-size: 0.9rem;">
-                                <strong>Collection:</strong> ${order.collection_method} • 
-                                <strong>Payment:</strong> ${order.payment_method}
-                                ${order.order_schedule === 'now' ? '• <span style="color: var(--accent);"><i class="fas fa-bolt"></i> Serve Now</span>' : ''}
-                            </div>
+                            <strong>Items:</strong> 
+                            ${order.items.map(item => `${item.name} (×${item.quantity})`).join(', ')}
+                        </div>
+
+
+                        ${
+                            Array.isArray(order.food_preferences) &&
+                            order.food_preferences.some(
+                                preference =>
+                                    [
+                                        'Wheat / Gluten',
+                                        'Milk / Dairy',
+                                        'Eggs',
+                                        'Soy',
+                                        'Mustard',
+                                        'Sesame Seeds',
+                                        'Peanuts',
+                                        'Tree Nuts',
+                                        'Fish',
+                                        'Shellfish'
+                                    ].includes(preference)
+                            )
+
+                                ? `
+                                    <div style="
+                                        display: inline-flex;
+                                        align-items: center;
+                                        gap: 6px;
+                                        background: #dc3545;
+                                        color: white;
+                                        padding: 5px 10px;
+                                        border-radius: 20px;
+                                        font-size: 0.75rem;
+                                        font-weight: 800;
+                                        margin: 5px 0 8px 0;
+                                    ">
+                                        <i class="fas fa-exclamation-triangle"></i>
+                                        ALLERGY
+                                    </div>
+                                `
+
+                                : ''
+                        }
+
+                        ${
+                                (
+                                    (
+                                        Array.isArray(order.food_preferences) &&
+                                        order.food_preferences.some(
+                                            preference =>
+                                                ![
+                                                    'Wheat / Gluten',
+                                                    'Milk / Dairy',
+                                                    'Eggs',
+                                                    'Soy',
+                                                    'Mustard',
+                                                    'Sesame Seeds',
+                                                    'Peanuts',
+                                                    'Tree Nuts',
+                                                    'Fish',
+                                                    'Shellfish'
+                                                ].includes(preference)
+                                        )
+                                    ) ||
+
+                                    (
+                                        Array.isArray(order.excluded_addons) &&
+                                        order.excluded_addons.length > 0
+                                    ) ||
+
+                                    (
+                                        order.special_food_instructions &&
+                                        order.special_food_instructions.trim() !== ''
+                                    )
+                                )
+
+                                    ? `
+                                        <div style="
+                                            display: inline-flex;
+                                            align-items: center;
+                                            gap: 6px;
+                                            background: #fff3cd;
+                                            color: #856404;
+                                            border: 1px solid #ffe69c;
+                                            padding: 5px 10px;
+                                            border-radius: 20px;
+                                            font-size: 0.75rem;
+                                            font-weight: 700;
+                                            margin: 5px 6px 8px 0;
+                                        ">
+                                            <i class="fas fa-utensils"></i>
+                                            SPECIAL REQUEST
+                                        </div>
+                                    `
+
+                                    : ''
+                            }
+
+                        <div style="color: #666; font-size: 0.9rem;">
+                            <strong>Collection:</strong> ${order.collection_method} • 
+                            <strong>Payment:</strong> ${order.payment_method}
+                            ${order.order_schedule === 'now' ? '• <span style="color: var(--accent);"><i class="fas fa-bolt"></i> Serve Now</span>' : ''}
+                        </div>
                         </div>
                         
                         <select class="order-status-select" data-order-id="${order.id}" 
@@ -5017,8 +6817,57 @@ async function viewOrderDetails(orderId) {
             .single();
         
         if (error) throw error;
-        
-        const modal = document.createElement('div');
+
+
+// -----------------------------------------
+// FOOD SAFETY / PREFERENCES
+// -----------------------------------------
+
+const allergyOptions = [
+    'Wheat / Gluten',
+    'Milk / Dairy',
+    'Eggs',
+    'Soy',
+    'Mustard',
+    'Sesame Seeds',
+    'Peanuts',
+    'Tree Nuts',
+    'Fish',
+    'Shellfish'
+];
+
+
+const allFoodPreferences =
+    Array.isArray(order.food_preferences)
+        ? order.food_preferences
+        : [];
+
+
+const allergies =
+    allFoodPreferences.filter(
+        preference =>
+            allergyOptions.includes(
+                preference
+            )
+    );
+
+
+const dietaryPreferences =
+    allFoodPreferences.filter(
+        preference =>
+            !allergyOptions.includes(
+                preference
+            )
+    );
+
+
+const excludedAddons =
+    Array.isArray(order.excluded_addons)
+        ? order.excluded_addons
+        : [];
+
+
+const modal = document.createElement('div');
         modal.className = 'modal-overlay active';
 
         modal.innerHTML = `
@@ -5092,15 +6941,315 @@ async function viewOrderDetails(orderId) {
                         ` : ''}
                     </div>
                     
-                    <h4>Order Items</h4>
-                    ${order.items.map(item => `
-                        <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #eee;">
-                            <div>${item.name} × ${item.quantity}</div>
-                            <div>R${(item.price * item.quantity).toFixed(2)}</div>
+                    ${
+    allergies.length > 0
+
+        ? `
+            <div style="
+                background: #fff0f0;
+                border: 2px solid #dc3545;
+                border-radius: 10px;
+                padding: 14px;
+                margin-bottom: 15px;
+            ">
+
+                <strong style="
+                    display: block;
+                    color: #dc3545;
+                    font-size: 1rem;
+                    margin-bottom: 8px;
+                ">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    ALLERGY WARNING
+                </strong>
+
+                <div style="
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 7px;
+                ">
+
+                    ${allergies.map(
+                        allergy => `
+
+                            <span style="
+                                background: #dc3545;
+                                color: white;
+                                padding: 5px 9px;
+                                border-radius: 20px;
+                                font-size: 0.8rem;
+                                font-weight: 700;
+                            ">
+                                ${escapeHtml(allergy)}
+                            </span>
+
+                        `
+                    ).join('')}
+
+                </div>
+
+            </div>
+        `
+
+        : ''
+}
+
+
+${
+    dietaryPreferences.length > 0
+
+        ? `
+            <div style="
+                background: #fff8e1;
+                border: 1px solid #ffc107;
+                border-radius: 10px;
+                padding: 14px;
+                margin-bottom: 15px;
+            ">
+
+                <strong style="
+                    display: block;
+                    margin-bottom: 8px;
+                ">
+                    Food Preferences
+                </strong>
+
+                <div>
+                    ${dietaryPreferences
+                        .map(
+                            preference =>
+                                `• ${escapeHtml(preference)}`
+                        )
+                        .join('<br>')}
+                </div>
+
+            </div>
+        `
+
+        : ''
+}
+
+
+${
+    excludedAddons.length > 0
+
+        ? `
+            <div style="
+                background: #f8f9fa;
+                border: 1px solid #ddd;
+                border-radius: 10px;
+                padding: 14px;
+                margin-bottom: 15px;
+            ">
+
+                <strong style="
+                    display: block;
+                    margin-bottom: 8px;
+                ">
+                    <i class="fas fa-minus-circle"></i>
+                    Remove From Order
+                </strong>
+
+                ${excludedAddons.map(
+                    excluded => `
+
+                        <div style="
+                            margin-bottom: 5px;
+                        ">
+                            <strong>
+                                ${escapeHtml(
+                                    excluded.item_name ||
+                                    'Menu Item'
+                                )}:
+                            </strong>
+
+                            No
+                            ${escapeHtml(
+                                excluded.addon_name
+                            )}
                         </div>
-                    `).join('')}
-                    
-                    <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 1.2rem; margin-top: 15px; padding-top: 15px; border-top: 2px solid var(--primary);">
+
+                    `
+                ).join('')}
+
+            </div>
+        `
+
+        : ''
+}
+
+
+${
+    order.special_food_instructions
+
+        ? `
+            <div style="
+                background: #e7f3ff;
+                border-left: 4px solid var(--primary);
+                padding: 14px;
+                border-radius: 8px;
+                margin-bottom: 15px;
+            ">
+
+                <strong style="
+                    display: block;
+                    margin-bottom: 6px;
+                ">
+                    Special Food Instructions
+                </strong>
+
+                ${escapeHtml(
+                    order.special_food_instructions
+                )}
+
+            </div>
+        `
+
+        : ''
+}
+
+
+<h4>Order Items</h4>
+
+${order.items.map(item => `
+
+    <div style="
+        padding: 10px 0;
+        border-bottom: 1px solid #eee;
+    ">
+
+        <div style="
+            display: flex;
+            justify-content: space-between;
+            gap: 15px;
+        ">
+
+            <div>
+                ${escapeHtml(item.name)}
+                ×
+                ${item.quantity}
+            </div>
+
+            <div>
+                R${(
+                    Number(item.price) *
+                    Number(item.quantity)
+                ).toFixed(2)}
+            </div>
+
+        </div>
+
+
+        ${
+            item.excluded_addons &&
+            item.excluded_addons.length > 0
+
+                ? `
+                    <div style="
+                        color: #dc3545;
+                        font-size: 0.82rem;
+                        margin-top: 5px;
+                        font-weight: 600;
+                    ">
+                        Remove:
+                        ${item.excluded_addons
+                            .map(
+                                addon =>
+                                    escapeHtml(addon)
+                            )
+                            .join(', ')}
+                    </div>
+                `
+
+                : ''
+        }
+
+
+        ${
+            item.item_type === 'combo'
+
+                ? `
+
+                    ${
+                        item.combo_menu_items &&
+                        item.combo_menu_items.length > 0
+
+                            ? `
+                                <div style="
+                                    color: #666;
+                                    font-size: 0.8rem;
+                                    margin-top: 5px;
+                                ">
+                                    Includes:
+                                    ${item.combo_menu_items
+                                        .map(
+                                            comboItem =>
+                                                escapeHtml(
+                                                    comboItem.name
+                                                )
+                                        )
+                                        .join(', ')}
+                                </div>
+                            `
+
+                            : ''
+                    }
+
+
+                    ${
+                        item.combo_extra_addons &&
+                        item.combo_extra_addons.length > 0
+
+                            ? `
+                                <div style="
+                                    color: #666;
+                                    font-size: 0.8rem;
+                                    margin-top: 3px;
+                                ">
+                                    Extras:
+                                    ${item.combo_extra_addons
+                                        .map(
+                                            addon =>
+                                                escapeHtml(
+                                                    addon.name
+                                                )
+                                        )
+                                        .join(', ')}
+                                </div>
+                            `
+
+                            : ''
+                    }
+
+                `
+
+                : ''
+        }
+
+
+        ${
+            item.flavour
+
+                ? `
+                    <div style="
+                        color: #666;
+                        font-size: 0.8rem;
+                        margin-top: 4px;
+                    ">
+                        Flavour:
+                        ${escapeHtml(item.flavour)}
+                    </div>
+                `
+
+                : ''
+        }
+
+    </div>
+
+`).join('')}
+
+
+<div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 1.2rem; margin-top: 15px; padding-top: 15px; border-top: 2px solid var(--primary);">
                         <div>Total:</div>
                         <div>R${parseFloat(order.total_amount).toFixed(2)}</div>
                     </div>
@@ -5446,14 +7595,14 @@ function setupDashboardEventListeners() {
         }
         
         customersList.innerHTML = customers.map(customer => `
-            <div class="customer-item" style="background: white; padding: 15px; border-radius: 10px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
+            <div class="customer-item" style="background: white; padding: 15px; border-radius: 10px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; ">
                 <div style="flex: 1;">
                     <div style="font-weight: bold; margin-bottom: 5px;">${customer.customer_email}</div>
                     <div style="font-size: 0.8rem; color: #666;">
                         Registered: ${new Date(customer.registered_at).toLocaleDateString()}
                     </div>
                 </div>
-                <button class="btn-danger remove-customer-btn" data-customer-id="${customer.id}" 
+                <button hidden class="btn-danger remove-customer-btn" data-customer-id="${customer.id}" 
                         style="background: #dc3545; color: white; border: none; padding: 8px 15px; border-radius: 5px; cursor: pointer; font-size: 0.8rem;">
                     Remove
                 </button>
@@ -5569,9 +7718,34 @@ async function registerCustomer() {
     const phone = document.getElementById('settings-shop-phone').value.trim();
     const address = document.getElementById('settings-shop-address').value.trim();
     
-    const deliveryEnabled = document.getElementById('delivery-enabled').checked;
-    const cardPaymentEnabled = document.getElementById('card-payment-enabled').checked;
-    const deliveryCharge = parseFloat(document.getElementById('delivery-charge').value) || 10;
+    const deliveryEnabled =
+    document.getElementById(
+        'delivery-enabled'
+    ).checked;
+
+const freeDelivery =
+    document.getElementById(
+        'free-delivery'
+    ).checked;
+
+const cardPaymentEnabled =
+    document.getElementById(
+        'card-payment-enabled'
+    ).checked;
+
+const deliveryChargeValue =
+    parseFloat(
+        document.getElementById(
+            'delivery-charge'
+        ).value
+    );
+
+const deliveryCharge =
+    Number.isFinite(
+        deliveryChargeValue
+    )
+        ? deliveryChargeValue
+        : 0;
         
     try {
         const btn = document.getElementById('update-shop-btn');
@@ -5580,26 +7754,62 @@ async function registerCustomer() {
         btn.disabled = true;
         
         const { error } = await supabase
-            .from('shops')
-            .update({
+    .from('shops')
+    .update({
 
-                phone_number: phone || null,
-                address: address || null,
-                delivery_enabled: deliveryEnabled,
-                card_payment_enabled: cardPaymentEnabled,
-                delivery_charge_within_2km: deliveryCharge
-            })
-            .eq('id', currentShop.id);
+        phone_number:
+            phone || null,
+
+        address:
+            address || null,
+
+        delivery_enabled:
+            deliveryEnabled,
+
+        free_delivery:
+            freeDelivery,
+
+        card_payment_enabled:
+            cardPaymentEnabled,
+
+        delivery_charge_within_2km:
+            freeDelivery
+                ? 0
+                : deliveryCharge
+
+    })
+    .eq(
+        'id',
+        currentShop.id
+    );
         
-        if (error) throw error;
-        
-        currentShop.phone_number = phone;
-        currentShop.address = address;
-        currentShop.delivery_enabled = deliveryEnabled;
-        currentShop.card_payment_enabled = cardPaymentEnabled;
-        currentShop.delivery_charge_within_2km = deliveryCharge;
-        
-        showToast('Shop settings updated successfully!');
+        if (error) {
+    throw error;
+}
+
+currentShop.phone_number =
+    phone;
+
+currentShop.address =
+    address;
+
+currentShop.delivery_enabled =
+    deliveryEnabled;
+
+currentShop.free_delivery =
+    freeDelivery;
+
+currentShop.card_payment_enabled =
+    cardPaymentEnabled;
+
+currentShop.delivery_charge_within_2km =
+    freeDelivery
+        ? 0
+        : deliveryCharge;
+
+showToast(
+    'Shop settings updated successfully!'
+);
         
     } catch (error) {
         console.error("Error updating shop:", error);
@@ -5650,6 +7860,4566 @@ async function loadDevAdminSection(section) {
     }
 }
 
+function addShopMenuAddonRow() {
+
+    const container =
+        document.getElementById(
+            'shop-new-addons-container'
+        );
+
+    if (!container) {
+        return;
+    }
+
+    const currentRows =
+        container.querySelectorAll(
+            '.shop-new-addon-row'
+        );
+
+    if (currentRows.length >= 10) {
+
+        alert(
+            'Maximum 10 free add-ons are allowed per menu item.'
+        );
+
+        return;
+    }
+
+    const row =
+        document.createElement('div');
+
+    row.className =
+        'shop-new-addon-row';
+
+    row.style.cssText = `
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 10px;
+    `;
+
+    row.innerHTML = `
+        <input
+            type="text"
+            class="form-input shop-new-addon-name"
+            placeholder="e.g. No onion, Tomato, Sauce"
+            maxlength="100"
+            style="flex: 1;"
+        >
+
+        <button
+            type="button"
+            class="btn-danger shop-remove-addon-btn"
+            style="
+                width: 42px;
+                height: 42px;
+                padding: 0;
+                flex-shrink: 0;
+            "
+            title="Remove add-on"
+        >
+            <i class="fas fa-trash"></i>
+        </button>
+    `;
+
+    row
+        .querySelector(
+            '.shop-remove-addon-btn'
+        )
+        .addEventListener(
+            'click',
+            () => {
+                row.remove();
+
+                updateShopAddonCounter();
+            }
+        );
+
+    container.appendChild(row);
+
+    updateShopAddonCounter();
+}
+
+
+function updateShopAddonCounter() {
+
+    const container =
+        document.getElementById(
+            'shop-new-addons-container'
+        );
+
+    const counter =
+        document.getElementById(
+            'shop-addon-counter'
+        );
+
+    if (
+        !container ||
+        !counter
+    ) {
+        return;
+    }
+
+    const count =
+        container.querySelectorAll(
+            '.shop-new-addon-row'
+        ).length;
+
+    counter.textContent =
+        `${count} / 10 add-ons`;
+}
+
+function showShopAddMenuItemModal() {
+
+    if (!currentShop) {
+        return;
+    }
+
+    const modal =
+        document.createElement('div');
+
+    modal.className =
+        'modal-overlay active';
+
+    modal.innerHTML = `
+
+        <div
+            class="page-modal"
+            style="max-width: 600px;"
+        >
+
+            <div class="page-header">
+
+                <h2>Add Menu Item</h2>
+
+                <button
+                    type="button"
+                    class="modal-close"
+                    onclick="
+                        this
+                            .closest('.modal-overlay')
+                            .remove()
+                    "
+                >
+                    <i class="fas fa-times"></i>
+                </button>
+
+            </div>
+
+
+            <div class="page-content">
+
+
+                <div class="form-group">
+
+                    <label class="form-label">
+                        Item Name *
+                    </label>
+
+                    <input
+                        type="text"
+                        class="form-input"
+                        id="shop-new-item-name"
+                        maxlength="150"
+                        placeholder="e.g. Chicken Burger"
+                    >
+
+                </div>
+
+
+                <div class="form-group">
+
+                    <label class="form-label">
+                        Description
+                    </label>
+
+                    <textarea
+                        class="form-textarea"
+                        id="shop-new-item-desc"
+                        placeholder="Describe this menu item"
+                    ></textarea>
+
+                </div>
+
+
+                <div class="form-group">
+
+                    <label class="form-label">
+                        Price (Rands) *
+                    </label>
+
+                    <input
+                        type="number"
+                        class="form-input"
+                        id="shop-new-item-price"
+                        min="0"
+                        step="0.01"
+                        placeholder="0.00"
+                    >
+
+                </div>
+
+
+                <div class="form-group">
+
+                    <label class="form-label">
+                        Category *
+                    </label>
+
+                    <input
+                        type="text"
+                        class="form-input"
+                        id="shop-new-item-category"
+                        maxlength="100"
+                        placeholder="e.g. Burgers, Pizza, Chicken"
+                    >
+
+                </div>
+
+
+                <div class="form-group">
+
+                    <label class="form-label">
+                        Badge (Optional)
+                    </label>
+
+                    <input
+                        type="text"
+                        class="form-input"
+                        id="shop-new-item-badge"
+                        maxlength="100"
+                        placeholder="Popular, New, Special..."
+                    >
+
+                </div>
+
+
+                <div class="form-group">
+
+                    <label class="form-label">
+                        Rating (Optional)
+                    </label>
+
+                    <input
+                        type="number"
+                        class="form-input"
+                        id="shop-new-item-rating"
+                        min="0"
+                        max="5"
+                        step="0.1"
+                        placeholder="e.g. 4.5"
+                    >
+
+                </div>
+
+
+                <div class="form-group">
+
+                    <label class="form-label">
+                        Preparation Time *
+                    </label>
+
+                    <input
+                        type="text"
+                        class="form-input"
+                        id="shop-new-item-prep-time"
+                        maxlength="50"
+                        placeholder="e.g. 15-20"
+                    >
+
+                    <small
+                        style="
+                            display: block;
+                            margin-top: 5px;
+                            color: #666;
+                        "
+                    >
+                        Enter minutes, for example 15-20.
+                    </small>
+
+                </div>
+
+
+                ${
+                    currentShop.plan === 'paid'
+
+                        ? `
+
+                            <div class="form-group">
+
+                                <label class="form-label">
+                                    Menu Image
+                                </label>
+
+                                <input
+                                    type="file"
+                                    class="form-input"
+                                    id="shop-new-item-image"
+                                    accept=".jpg,image/jpeg"
+                                >
+
+                                <small
+                                    style="
+                                        display: block;
+                                        margin-top: 6px;
+                                        color: #666;
+                                        line-height: 1.5;
+                                    "
+                                >
+                                    JPG only.
+                                    Maximum size: 300 KB.
+                                </small>
+
+                            </div>
+
+                        `
+
+                        : `
+
+                            <div
+                                style="
+                                    background: #f8f9fa;
+                                    border: 1px solid #e5e7eb;
+                                    padding: 14px;
+                                    border-radius: 10px;
+                                    color: #666;
+                                    margin-bottom: 18px;
+                                "
+                            >
+                                Menu image uploads are available
+                                on the Paid plan.
+                            </div>
+
+                        `
+                }
+
+
+                <div
+                    style="
+                        border-top: 1px solid #eee;
+                        padding-top: 20px;
+                        margin-top: 10px;
+                    "
+                >
+
+                    <div
+                        style="
+                            display: flex;
+                            align-items: center;
+                            justify-content: space-between;
+                            gap: 10px;
+                            margin-bottom: 8px;
+                        "
+                    >
+
+                        <div>
+
+                            <strong>
+                                Add-ons (Optional)
+                            </strong>
+
+                            <div
+                                style="
+                                    color: #666;
+                                    font-size: 0.8rem;
+                                    margin-top: 3px;
+                                "
+                            >
+                                No additional cost
+                            </div>
+
+                        </div>
+
+                        <span
+                            id="shop-addon-counter"
+                            style="
+                                font-size: 0.8rem;
+                                color: #666;
+                            "
+                        >
+                            0 / 10 add-ons
+                        </span>
+
+                    </div>
+
+
+                    <div
+                        id="shop-new-addons-container"
+                    ></div>
+
+
+                    <button
+                        type="button"
+                        id="shop-add-addon-row-btn"
+                        class="btn-secondary"
+                        style="
+                            margin-top: 5px;
+                            margin-bottom: 20px;
+                        "
+                    >
+                        <i class="fas fa-plus"></i>
+                        Add Add-on
+                    </button>
+
+                </div>
+
+
+                <button
+                    type="button"
+                    class="btn-primary"
+                    id="save-shop-new-menu-item-btn"
+                    style="width: 100%;"
+                >
+                    <i class="fas fa-save"></i>
+                    Add Menu Item
+                </button>
+
+            </div>
+
+        </div>
+    `;
+
+
+    document.body.appendChild(
+        modal
+    );
+
+
+    document
+        .getElementById(
+            'shop-add-addon-row-btn'
+        )
+        .addEventListener(
+            'click',
+            addShopMenuAddonRow
+        );
+
+
+    document
+        .getElementById(
+            'save-shop-new-menu-item-btn'
+        )
+        .addEventListener(
+            'click',
+            async () => {
+
+                await saveShopNewMenuItem(
+                    modal
+                );
+
+            }
+        );
+}
+
+async function saveShopNewMenuItem(modal) {
+
+    if (!currentShop) {
+        alert('Shop information is unavailable.');
+        return;
+    }
+
+
+    const name =
+        document
+            .getElementById('shop-new-item-name')
+            .value
+            .trim();
+
+    const description =
+        document
+            .getElementById('shop-new-item-desc')
+            .value
+            .trim();
+
+    const price =
+        parseFloat(
+            document
+                .getElementById('shop-new-item-price')
+                .value
+        );
+
+    const category =
+        document
+            .getElementById('shop-new-item-category')
+            .value
+            .trim();
+
+    const badge =
+        document
+            .getElementById('shop-new-item-badge')
+            .value
+            .trim();
+
+    const ratingValue =
+        document
+            .getElementById('shop-new-item-rating')
+            .value;
+
+    const rating =
+        ratingValue
+            ? parseFloat(ratingValue)
+            : null;
+
+    const preparationTime =
+        document
+            .getElementById('shop-new-item-prep-time')
+            .value
+            .trim();
+
+
+    if (
+        !name ||
+        !Number.isFinite(price) ||
+        price < 0 ||
+        !category ||
+        !preparationTime
+    ) {
+        alert(
+            'Item Name, Price, Category and Preparation Time are required.'
+        );
+
+        return;
+    }
+
+
+    if (
+        rating !== null &&
+        (
+            !Number.isFinite(rating) ||
+            rating < 0 ||
+            rating > 5
+        )
+    ) {
+        alert(
+            'Rating must be between 0 and 5.'
+        );
+
+        return;
+    }
+
+
+    const addonInputs =
+        document.querySelectorAll(
+            '#shop-new-addons-container .shop-new-addon-name'
+        );
+
+
+    if (addonInputs.length > 10) {
+        alert(
+            'Maximum 10 free add-ons are allowed per menu item.'
+        );
+
+        return;
+    }
+
+
+    const addons = [];
+
+    addonInputs.forEach(input => {
+
+        const addonName =
+            input.value.trim();
+
+        if (addonName) {
+
+            addons.push({
+                name: addonName,
+                price: 0
+            });
+
+        }
+    });
+
+
+    if (addons.length > 10) {
+        alert(
+            'Maximum 10 free add-ons are allowed per menu item.'
+        );
+
+        return;
+    }
+
+
+    const saveBtn =
+        document.getElementById(
+            'save-shop-new-menu-item-btn'
+        );
+
+
+    try {
+
+        if (saveBtn) {
+
+            saveBtn.disabled = true;
+
+            saveBtn.innerHTML = `
+                <i class="fas fa-spinner fa-spin"></i>
+                Saving...
+            `;
+        }
+
+
+        // -----------------------------------------
+        // CHECK 20 MENU LIMIT AGAIN
+        // -----------------------------------------
+
+        const {
+            count,
+            error: countError
+        } = await supabase
+            .from('menu_items')
+            .select(
+                'id',
+                {
+                    count: 'exact',
+                    head: true
+                }
+            )
+            .eq(
+                'shop_id',
+                currentShop.id
+            );
+
+
+        if (countError) {
+            throw countError;
+        }
+
+
+        if ((count || 0) >= 20) {
+
+            alert(
+                'Menu limit reached. Each shop can have a maximum of 20 menu items.'
+            );
+
+            return;
+        }
+
+
+        // -----------------------------------------
+        // IMAGE
+        // -----------------------------------------
+
+        let imageFile = null;
+
+
+        if (currentShop.plan === 'paid') {
+
+            const imageInput =
+                document.getElementById(
+                    'shop-new-item-image'
+                );
+
+
+            imageFile =
+                imageInput?.files?.[0] ||
+                null;
+
+
+            if (imageFile) {
+
+                if (
+                    imageFile.type !== 'image/jpeg' ||
+                    !imageFile.name
+                        .toLowerCase()
+                        .endsWith('.jpg')
+                ) {
+
+                    alert(
+                        'Only JPG menu images are allowed.'
+                    );
+
+                    return;
+                }
+
+
+                if (
+                    imageFile.size >
+                    300 * 1024
+                ) {
+
+                    alert(
+                        'Your image exceeds the 300 KB size limit.'
+                    );
+
+                    return;
+                }
+            }
+        }
+
+
+        // -----------------------------------------
+        // INSERT MENU ITEM
+        // -----------------------------------------
+
+        const {
+            data: menuItem,
+            error: insertError
+        } = await supabase
+            .from('menu_items')
+            .insert([
+                {
+                    shop_id:
+                        currentShop.id,
+
+                    name:
+                        name,
+
+                    description:
+                        description || null,
+
+                    price:
+                        price,
+
+                    category:
+                        category,
+
+                    image_url:
+                        null,
+
+                    badge:
+                        badge || null,
+
+                    rating:
+                        rating,
+
+                    preparation_time:
+                        preparationTime,
+
+                    item_type:
+                        'standard',
+
+                    on_sale:
+                        false,
+
+                    sale_price:
+                        null
+                }
+            ])
+            .select()
+            .single();
+
+
+        if (insertError) {
+            throw insertError;
+        }
+
+
+        // -----------------------------------------
+        // UPLOAD IMAGE AFTER ITEM EXISTS
+        // -----------------------------------------
+
+        if (
+            imageFile &&
+            currentShop.plan === 'paid'
+        ) {
+
+            const uploadedImageUrl =
+                await uploadMenuImage(
+                    imageFile,
+                    currentShop.id,
+                    menuItem.id
+                );
+
+
+            const {
+                error: imageUpdateError
+            } = await supabase
+                .from('menu_items')
+                .update({
+                    image_url:
+                        uploadedImageUrl
+                })
+                .eq(
+                    'id',
+                    menuItem.id
+                )
+                .eq(
+                    'shop_id',
+                    currentShop.id
+                );
+
+
+            if (imageUpdateError) {
+                throw imageUpdateError;
+            }
+        }
+
+
+        // -----------------------------------------
+        // INSERT FREE ADD-ONS
+        // -----------------------------------------
+
+        if (addons.length > 0) {
+
+            const addonsToInsert =
+                addons.map(addon => ({
+                    menu_item_id:
+                        menuItem.id,
+
+                    name:
+                        addon.name,
+
+                    price:
+                        0
+                }));
+
+
+            const {
+                error: addonError
+            } = await supabase
+                .from(
+                    'menu_item_addons'
+                )
+                .insert(
+                    addonsToInsert
+                );
+
+
+            if (addonError) {
+                throw addonError;
+            }
+        }
+
+
+        showToast(
+            'Menu item added successfully!'
+        );
+
+
+        modal.remove();
+
+
+        await loadShopAdminMenuEditor();
+
+
+    } catch (error) {
+
+        console.error(
+            'Error adding Shop Admin menu item:',
+            error
+        );
+
+
+        alert(
+            'Unable to add menu item: ' +
+            error.message
+        );
+
+
+    } finally {
+
+        if (
+            saveBtn &&
+            document.body.contains(saveBtn)
+        ) {
+
+            saveBtn.disabled = false;
+
+            saveBtn.innerHTML = `
+                <i class="fas fa-save"></i>
+                Add Menu Item
+            `;
+        }
+    }
+}
+
+function setupShopMenuAddButton() {
+
+    const addBtn =
+        document.getElementById(
+            'shop-add-menu-item-btn'
+        );
+
+    if (!addBtn) {
+        return;
+    }
+
+    const newBtn =
+        addBtn.cloneNode(true);
+
+    addBtn.parentNode.replaceChild(
+        newBtn,
+        addBtn
+    );
+
+    newBtn.addEventListener(
+        'click',
+        async () => {
+
+            if (!currentShop) {
+                return;
+            }
+
+            try {
+
+                const {
+                    count,
+                    error
+                } = await supabase
+                    .from('menu_items')
+                    .select(
+                        'id',
+                        {
+                            count: 'exact',
+                            head: true
+                        }
+                    )
+                    .eq(
+                        'shop_id',
+                        currentShop.id
+                    );
+
+                if (error) {
+                    throw error;
+                }
+
+                if ((count || 0) >= 20) {
+
+                    alert(
+                        'Menu limit reached. Each shop can have a maximum of 20 menu items.'
+                    );
+
+                    return;
+                }
+
+                showShopAddMenuItemModal();
+
+            } catch (error) {
+
+                console.error(
+                    'Unable to check menu limit:',
+                    error
+                );
+
+                alert(
+                    'Unable to add menu item: ' +
+                    error.message
+                );
+            }
+        }
+    );
+}
+
+function showShopExtraAddonModal() {
+
+    if (!currentShop) {
+        return;
+    }
+
+
+    const modal =
+        document.createElement('div');
+
+
+    modal.className =
+        'modal-overlay active';
+
+
+    modal.innerHTML = `
+
+        <div
+            class="page-modal"
+            style="max-width: 600px;"
+        >
+
+            <div class="page-header">
+
+                <h2>Add Extra Addon</h2>
+
+                <button
+                    type="button"
+                    class="modal-close"
+                    onclick="
+                        this
+                            .closest('.modal-overlay')
+                            .remove()
+                    "
+                >
+                    <i class="fas fa-times"></i>
+                </button>
+
+            </div>
+
+
+            <div class="page-content">
+
+
+                <div class="form-group">
+
+                    <label class="form-label">
+                        Item Name *
+                    </label>
+
+                    <input
+                        type="text"
+                        class="form-input"
+                        id="shop-extra-addon-name"
+                        maxlength="150"
+                        placeholder="e.g. Cheese, Coke, Russian"
+                    >
+
+                </div>
+
+
+                <div class="form-group">
+
+                    <label class="form-label">
+                        Description
+                    </label>
+
+                    <textarea
+                        class="form-textarea"
+                        id="shop-extra-addon-description"
+                        placeholder="Describe this extra addon"
+                    ></textarea>
+
+                </div>
+
+
+                <div class="form-group">
+
+                    <label class="form-label">
+                        Price (Rands) *
+                    </label>
+
+                    <input
+                        type="number"
+                        class="form-input"
+                        id="shop-extra-addon-price"
+                        min="0"
+                        step="0.01"
+                        placeholder="0.00"
+                    >
+
+                </div>
+
+
+                <div class="form-group">
+
+                    <label class="form-label">
+                        Flavour
+                    </label>
+
+                    <input
+                        type="text"
+                        class="form-input"
+                        id="shop-extra-addon-flavour"
+                        maxlength="100"
+                        placeholder="e.g. Original, Cheese, BBQ, Cola"
+                    >
+
+                </div>
+
+
+                <div class="form-group">
+
+                    <label class="form-label">
+                        Badge (Optional)
+                    </label>
+
+                    <input
+                        type="text"
+                        class="form-input"
+                        id="shop-extra-addon-badge"
+                        maxlength="100"
+                        placeholder="Popular, New, Special..."
+                    >
+
+                </div>
+
+
+                ${
+                    currentShop.plan === 'paid'
+
+                        ? `
+
+                            <div class="form-group">
+
+                                <label class="form-label">
+                                    Menu Image
+                                </label>
+
+                                <input
+                                    type="file"
+                                    class="form-input"
+                                    id="shop-extra-addon-image"
+                                    accept=".jpg,image/jpeg"
+                                >
+
+                                <small
+                                    style="
+                                        display: block;
+                                        margin-top: 6px;
+                                        color: #666;
+                                        line-height: 1.5;
+                                    "
+                                >
+                                    JPG only.
+                                    Maximum size: 300 KB.
+                                </small>
+
+                            </div>
+
+                        `
+
+                        : `
+
+                            <div
+                                style="
+                                    background: #f8f9fa;
+                                    border: 1px solid #e5e7eb;
+                                    padding: 14px;
+                                    border-radius: 10px;
+                                    color: #666;
+                                    margin-bottom: 18px;
+                                "
+                            >
+                                Extra Addon images are available
+                                on the Paid plan.
+                            </div>
+
+                        `
+                }
+
+
+                <div
+                    style="
+                        background: #fff7ed;
+                        border: 1px solid #fed7aa;
+                        padding: 12px 14px;
+                        border-radius: 10px;
+                        margin-bottom: 20px;
+                        color: #9a3412;
+                        font-size: 0.85rem;
+                    "
+                >
+
+                    <i class="fas fa-info-circle"></i>
+
+                    This item will automatically appear
+                    under the <strong>Add-ons</strong>
+                    category for customers.
+
+                </div>
+
+
+                <button
+                    type="button"
+                    class="btn-primary"
+                    id="save-shop-extra-addon-btn"
+                    style="width: 100%;"
+                >
+
+                    <i class="fas fa-save"></i>
+
+                    Add Extra Addon
+
+                </button>
+
+
+            </div>
+
+        </div>
+    `;
+
+
+    document.body.appendChild(
+        modal
+    );
+
+
+    document
+        .getElementById(
+            'save-shop-extra-addon-btn'
+        )
+        .addEventListener(
+            'click',
+            async () => {
+
+                await saveShopExtraAddon(
+                    modal
+                );
+
+            }
+        );
+}
+
+async function saveShopExtraAddon(modal) {
+
+    if (!currentShop) {
+        alert('Shop information is unavailable.');
+        return;
+    }
+
+
+    const name =
+        document
+            .getElementById('shop-extra-addon-name')
+            .value
+            .trim();
+
+    const description =
+        document
+            .getElementById('shop-extra-addon-description')
+            .value
+            .trim();
+
+    const price =
+        parseFloat(
+            document
+                .getElementById('shop-extra-addon-price')
+                .value
+        );
+
+    const flavour =
+        document
+            .getElementById('shop-extra-addon-flavour')
+            .value
+            .trim();
+
+    const badge =
+        document
+            .getElementById('shop-extra-addon-badge')
+            .value
+            .trim();
+
+
+    if (
+        !name ||
+        !Number.isFinite(price) ||
+        price < 0
+    ) {
+
+        alert(
+            'Item Name and Price are required.'
+        );
+
+        return;
+    }
+
+
+    const saveBtn =
+        document.getElementById(
+            'save-shop-extra-addon-btn'
+        );
+
+
+    try {
+
+        if (saveBtn) {
+
+            saveBtn.disabled = true;
+
+            saveBtn.innerHTML = `
+                <i class="fas fa-spinner fa-spin"></i>
+                Saving...
+            `;
+        }
+
+
+        let imageFile = null;
+
+
+        if (currentShop.plan === 'paid') {
+
+            const imageInput =
+                document.getElementById(
+                    'shop-extra-addon-image'
+                );
+
+            imageFile =
+                imageInput?.files?.[0] ||
+                null;
+
+
+            if (imageFile) {
+
+                if (
+                    imageFile.type !== 'image/jpeg' ||
+                    !imageFile.name
+                        .toLowerCase()
+                        .endsWith('.jpg')
+                ) {
+
+                    alert(
+                        'Only JPG images are allowed.'
+                    );
+
+                    return;
+                }
+
+
+                if (
+                    imageFile.size >
+                    300 * 1024
+                ) {
+
+                    alert(
+                        'Your image exceeds the 300 KB size limit.'
+                    );
+
+                    return;
+                }
+            }
+        }
+
+
+        const {
+            data: extraAddon,
+            error: insertError
+        } = await supabase
+            .from('extra_addons')
+            .insert([
+                {
+                    shop_id:
+                        currentShop.id,
+
+                    name:
+                        name,
+
+                    description:
+                        description || null,
+
+                    price:
+                        price,
+
+                    image_url:
+                        null,
+
+                    badge:
+                        badge || null,
+
+                    flavour:
+                        flavour || null,
+
+                    is_available:
+                        true
+                }
+            ])
+            .select()
+            .single();
+
+
+        if (insertError) {
+            throw insertError;
+        }
+
+
+        if (
+            imageFile &&
+            currentShop.plan === 'paid'
+        ) {
+
+            const uploadedImageUrl =
+                await uploadMenuImage(
+                    imageFile,
+                    currentShop.id,
+                    `extra-${extraAddon.id}`
+                );
+
+
+            const {
+                error: imageUpdateError
+            } = await supabase
+                .from('extra_addons')
+                .update({
+                    image_url:
+                        uploadedImageUrl
+                })
+                .eq(
+                    'id',
+                    extraAddon.id
+                )
+                .eq(
+                    'shop_id',
+                    currentShop.id
+                );
+
+
+            if (imageUpdateError) {
+                throw imageUpdateError;
+            }
+        }
+
+
+        showToast(
+            'Extra Addon added successfully!'
+        );
+
+
+        modal.remove();
+
+
+        await loadShopExtraAddons();
+
+
+    } catch (error) {
+
+        console.error(
+            'Error adding Extra Addon:',
+            error
+        );
+
+        alert(
+            'Unable to add Extra Addon: ' +
+            error.message
+        );
+
+
+    } finally {
+
+        if (
+            saveBtn &&
+            document.body.contains(saveBtn)
+        ) {
+
+            saveBtn.disabled = false;
+
+            saveBtn.innerHTML = `
+                <i class="fas fa-save"></i>
+                Add Extra Addon
+            `;
+        }
+    }
+}
+
+function setupShopExtraAddonButton() {
+
+    const button =
+        document.getElementById(
+            'shop-add-extra-addon-btn'
+        );
+
+
+    if (!button) {
+        return;
+    }
+
+
+    const newButton =
+        button.cloneNode(true);
+
+
+    button.parentNode.replaceChild(
+        newButton,
+        button
+    );
+
+
+    newButton.addEventListener(
+        'click',
+        () => {
+
+            showShopExtraAddonModal();
+
+        }
+    );
+}
+
+async function showShopComboModal() {
+
+    if (!currentShop) {
+        return;
+    }
+
+    try {
+
+        const [
+            menuResult,
+            addonResult
+        ] = await Promise.all([
+
+            supabase
+                .from('menu_items')
+                .select('id, name, price, on_sale, sale_price')
+                .eq('shop_id', currentShop.id)
+                .eq('is_available', true)
+                .order('name'),
+
+            supabase
+                .from('extra_addons')
+                .select('id, name, price, flavour')
+                .eq('shop_id', currentShop.id)
+                .eq('is_available', true)
+                .order('name')
+
+        ]);
+
+
+        if (menuResult.error) {
+            throw menuResult.error;
+        }
+
+        if (addonResult.error) {
+            throw addonResult.error;
+        }
+
+
+        const menuItems =
+            menuResult.data || [];
+
+        const extraAddons =
+            addonResult.data || [];
+
+
+        const modal =
+            document.createElement('div');
+
+        modal.className =
+            'modal-overlay active';
+
+
+        modal.innerHTML = `
+
+            <div
+                class="page-modal"
+                style="max-width: 700px;"
+            >
+
+                <div class="page-header">
+
+                    <h2>
+                        Add Combo Meal
+                    </h2>
+
+                    <button
+                        type="button"
+                        class="modal-close"
+                        onclick="
+                            this
+                                .closest('.modal-overlay')
+                                .remove()
+                        "
+                    >
+                        <i class="fas fa-times"></i>
+                    </button>
+
+                </div>
+
+
+                <div class="page-content">
+
+
+                    <div class="form-group">
+
+                        <label class="form-label">
+                            Combo Name *
+                        </label>
+
+                        <input
+                            type="text"
+                            class="form-input"
+                            id="shop-combo-name"
+                            maxlength="150"
+                            placeholder="e.g. Burger Meal Deal"
+                        >
+
+                    </div>
+
+
+                    <div class="form-group">
+
+                        <label class="form-label">
+                            Description
+                        </label>
+
+                        <textarea
+                            class="form-textarea"
+                            id="shop-combo-description"
+                            placeholder="Describe this combo"
+                        ></textarea>
+
+                    </div>
+
+
+                    <div class="form-group">
+
+                        <label class="form-label">
+                            Sale Price (Rands) *
+                        </label>
+
+                        <input
+                            type="number"
+                            class="form-input"
+                            id="shop-combo-sale-price"
+                            min="0"
+                            step="0.01"
+                            placeholder="0.00"
+                        >
+
+                    </div>
+
+
+                    <div class="form-group">
+
+                        <label class="form-label">
+                            Rating (Optional)
+                        </label>
+
+                        <input
+                            type="number"
+                            class="form-input"
+                            id="shop-combo-rating"
+                            min="0"
+                            max="5"
+                            step="0.1"
+                            placeholder="e.g. 4.5"
+                        >
+
+                    </div>
+
+
+                    <div class="form-group">
+
+                        <label class="form-label">
+                            Preparation Time *
+                        </label>
+
+                        <input
+                            type="text"
+                            class="form-input"
+                            id="shop-combo-prep-time"
+                            maxlength="50"
+                            placeholder="e.g. 20-30"
+                        >
+
+                    </div>
+
+
+                    ${
+                        currentShop.plan === 'paid'
+
+                            ? `
+
+                                <div class="form-group">
+
+                                    <label class="form-label">
+                                        Combo Menu Image
+                                    </label>
+
+                                    <input
+                                        type="file"
+                                        class="form-input"
+                                        id="shop-combo-image"
+                                        accept=".jpg,image/jpeg"
+                                    >
+
+                                    <small style="
+                                        display: block;
+                                        margin-top: 6px;
+                                        color: #666;
+                                    ">
+                                        JPG only. Maximum 300 KB.
+                                    </small>
+
+                                </div>
+
+                            `
+
+                            : `
+
+                                <div style="
+                                    background: #f8f9fa;
+                                    border: 1px solid #e5e7eb;
+                                    padding: 14px;
+                                    border-radius: 10px;
+                                    color: #666;
+                                    margin-bottom: 18px;
+                                ">
+                                    Combo images are available on the Paid plan.
+                                </div>
+
+                            `
+                    }
+
+
+                    <div style="
+                        border-top: 1px solid #eee;
+                        padding-top: 20px;
+                        margin-top: 10px;
+                    ">
+
+                        <div style="
+                            display: flex;
+                            justify-content: space-between;
+                            align-items: center;
+                            gap: 10px;
+                            margin-bottom: 10px;
+                        ">
+
+                            <div>
+
+                                <strong>
+                                    Menu Items
+                                </strong>
+
+                                <div style="
+                                    color: #666;
+                                    font-size: 0.8rem;
+                                    margin-top: 3px;
+                                ">
+                                    Select up to 5 menu items
+                                </div>
+
+                            </div>
+
+                            <span
+                                id="combo-menu-counter"
+                                style="
+                                    color: #666;
+                                    font-size: 0.8rem;
+                                "
+                            >
+                                0 / 5
+                            </span>
+
+                        </div>
+
+
+                        <div
+                            id="combo-menu-items-list"
+                            style="
+                                display: grid;
+                                gap: 8px;
+                            "
+                        >
+
+                            ${
+                                menuItems.length === 0
+
+                                    ? `
+                                        <div style="
+                                            color: #777;
+                                            padding: 12px;
+                                            background: #f8f9fa;
+                                            border-radius: 8px;
+                                        ">
+                                            No menu items available.
+                                        </div>
+                                    `
+
+                                    : menuItems
+                                        .map(item => `
+
+                                            <label style="
+                                                display: flex;
+                                                align-items: center;
+                                                justify-content: space-between;
+                                                gap: 12px;
+                                                padding: 10px 12px;
+                                                border: 1px solid #eee;
+                                                border-radius: 10px;
+                                                cursor: pointer;
+                                            ">
+
+                                                <div style="
+                                                    display: flex;
+                                                    align-items: center;
+                                                    gap: 10px;
+                                                ">
+
+                                                    <input
+                                                        type="checkbox"
+                                                        class="combo-menu-checkbox"
+                                                        value="${item.id}"
+                                                    >
+
+                                                    <span>
+                                                        ${escapeHtml(item.name)}
+                                                    </span>
+
+                                                </div>
+
+                                                <span style="
+                                                    color: #666;
+                                                    font-size: 0.85rem;
+                                                ">
+                                                    R${Number(
+                                                        item.on_sale &&
+                                                        item.sale_price !== null
+                                                            ? item.sale_price
+                                                            : item.price
+                                                    ).toFixed(2)}
+                                                </span>
+
+                                            </label>
+
+                                        `)
+                                        .join('')
+                            }
+
+                        </div>
+
+                    </div>
+
+
+                    <div style="
+                        border-top: 1px solid #eee;
+                        padding-top: 20px;
+                        margin-top: 25px;
+                    ">
+
+                        <div style="
+                            display: flex;
+                            justify-content: space-between;
+                            align-items: center;
+                            gap: 10px;
+                            margin-bottom: 10px;
+                        ">
+
+                            <div>
+
+                                <strong>
+                                    Extra Addons
+                                </strong>
+
+                                <div style="
+                                    color: #666;
+                                    font-size: 0.8rem;
+                                    margin-top: 3px;
+                                ">
+                                    Select up to 5 Extra Addons
+                                </div>
+
+                            </div>
+
+                            <span
+                                id="combo-extra-counter"
+                                style="
+                                    color: #666;
+                                    font-size: 0.8rem;
+                                "
+                            >
+                                0 / 5
+                            </span>
+
+                        </div>
+
+
+                        <div
+                            id="combo-extra-addons-list"
+                            style="
+                                display: grid;
+                                gap: 8px;
+                            "
+                        >
+
+                            ${
+                                extraAddons.length === 0
+
+                                    ? `
+                                        <div style="
+                                            color: #777;
+                                            padding: 12px;
+                                            background: #f8f9fa;
+                                            border-radius: 8px;
+                                        ">
+                                            No Extra Addons available.
+                                        </div>
+                                    `
+
+                                    : extraAddons
+                                        .map(addon => `
+
+                                            <label style="
+                                                display: flex;
+                                                align-items: center;
+                                                justify-content: space-between;
+                                                gap: 12px;
+                                                padding: 10px 12px;
+                                                border: 1px solid #eee;
+                                                border-radius: 10px;
+                                                cursor: pointer;
+                                            ">
+
+                                                <div style="
+                                                    display: flex;
+                                                    align-items: center;
+                                                    gap: 10px;
+                                                ">
+
+                                                    <input
+                                                        type="checkbox"
+                                                        class="combo-extra-checkbox"
+                                                        value="${addon.id}"
+                                                    >
+
+                                                    <span>
+
+                                                        ${escapeHtml(addon.name)}
+
+                                                        ${
+                                                            addon.flavour
+                                                                ? ` (${escapeHtml(addon.flavour)})`
+                                                                : ''
+                                                        }
+
+                                                    </span>
+
+                                                </div>
+
+                                                <span style="
+                                                    color: #666;
+                                                    font-size: 0.85rem;
+                                                ">
+                                                    R${Number(addon.price).toFixed(2)}
+                                                </span>
+
+                                            </label>
+
+                                        `)
+                                        .join('')
+                            }
+
+                        </div>
+
+                    </div>
+
+
+                    <div style="
+                        background: #fff3cd;
+                        border: 1px solid #ffe69c;
+                        color: #664d03;
+                        padding: 12px;
+                        border-radius: 10px;
+                        margin: 20px 0;
+                        font-size: 0.85rem;
+                    ">
+
+                        <i class="fas fa-tags"></i>
+
+                        Combo meals automatically display
+                        the SALE badge to customers.
+
+                    </div>
+
+
+                    <button
+                        type="button"
+                        class="btn-primary"
+                        id="save-shop-combo-btn"
+                        style="width: 100%;"
+                    >
+                        <i class="fas fa-save"></i>
+                        Add Combo Meal
+                    </button>
+
+                </div>
+
+            </div>
+        `;
+
+
+        document.body.appendChild(
+            modal
+        );
+
+
+        const menuCheckboxes =
+            modal.querySelectorAll(
+                '.combo-menu-checkbox'
+            );
+
+        const extraCheckboxes =
+            modal.querySelectorAll(
+                '.combo-extra-checkbox'
+            );
+
+
+        const menuCounter =
+            document.getElementById(
+                'combo-menu-counter'
+            );
+
+        const extraCounter =
+            document.getElementById(
+                'combo-extra-counter'
+            );
+
+
+        menuCheckboxes.forEach(
+            checkbox => {
+
+                checkbox.addEventListener(
+                    'change',
+                    function() {
+
+                        const checked =
+                            modal.querySelectorAll(
+                                '.combo-menu-checkbox:checked'
+                            );
+
+                        if (checked.length > 5) {
+
+                            this.checked = false;
+
+                            alert(
+                                'A combo can contain a maximum of 5 menu items.'
+                            );
+
+                            return;
+                        }
+
+                        menuCounter.textContent =
+                            `${checked.length} / 5`;
+
+                    }
+                );
+            }
+        );
+
+
+        extraCheckboxes.forEach(
+            checkbox => {
+
+                checkbox.addEventListener(
+                    'change',
+                    function() {
+
+                        const checked =
+                            modal.querySelectorAll(
+                                '.combo-extra-checkbox:checked'
+                            );
+
+                        if (checked.length > 5) {
+
+                            this.checked = false;
+
+                            alert(
+                                'A combo can contain a maximum of 5 Extra Addons.'
+                            );
+
+                            return;
+                        }
+
+                        extraCounter.textContent =
+                            `${checked.length} / 5`;
+
+                    }
+                );
+            }
+        );
+
+
+        document
+            .getElementById(
+                'save-shop-combo-btn'
+            )
+            .addEventListener(
+                'click',
+                async () => {
+
+                    await saveShopCombo(
+                        modal
+                    );
+
+                }
+            );
+
+
+    } catch (error) {
+
+        console.error(
+            'Unable to open Combo Builder:',
+            error
+        );
+
+        alert(
+            'Unable to open Combo Builder: ' +
+            error.message
+        );
+    }
+}
+
+async function saveShopCombo(modal) {
+
+    if (!currentShop) {
+        alert('Shop information is unavailable.');
+        return;
+    }
+
+    const name =
+        document
+            .getElementById('shop-combo-name')
+            .value
+            .trim();
+
+    const description =
+        document
+            .getElementById('shop-combo-description')
+            .value
+            .trim();
+
+    const salePrice =
+        parseFloat(
+            document
+                .getElementById('shop-combo-sale-price')
+                .value
+        );
+
+    const ratingValue =
+        document
+            .getElementById('shop-combo-rating')
+            .value;
+
+    const rating =
+        ratingValue
+            ? parseFloat(ratingValue)
+            : null;
+
+    const preparationTime =
+        document
+            .getElementById('shop-combo-prep-time')
+            .value
+            .trim();
+
+    const selectedMenuItems =
+        Array.from(
+            modal.querySelectorAll(
+                '.combo-menu-checkbox:checked'
+            )
+        ).map(
+            checkbox =>
+                parseInt(checkbox.value)
+        );
+
+    const selectedExtraAddons =
+        Array.from(
+            modal.querySelectorAll(
+                '.combo-extra-checkbox:checked'
+            )
+        ).map(
+            checkbox =>
+                parseInt(checkbox.value)
+        );
+
+
+    if (
+        !name ||
+        !Number.isFinite(salePrice) ||
+        salePrice < 0 ||
+        !preparationTime
+    ) {
+
+        alert(
+            'Combo Name, Sale Price and Preparation Time are required.'
+        );
+
+        return;
+    }
+
+
+    if (
+        rating !== null &&
+        (
+            !Number.isFinite(rating) ||
+            rating < 0 ||
+            rating > 5
+        )
+    ) {
+
+        alert(
+            'Rating must be between 0 and 5.'
+        );
+
+        return;
+    }
+
+
+    if (selectedMenuItems.length > 5) {
+
+        alert(
+            'A combo can contain a maximum of 5 menu items.'
+        );
+
+        return;
+    }
+
+
+    if (selectedExtraAddons.length > 5) {
+
+        alert(
+            'A combo can contain a maximum of 5 Extra Addons.'
+        );
+
+        return;
+    }
+
+
+    if (
+        selectedMenuItems.length === 0 &&
+        selectedExtraAddons.length === 0
+    ) {
+
+        alert(
+            'Please select at least one menu item or Extra Addon for this combo.'
+        );
+
+        return;
+    }
+
+
+    const saveBtn =
+        document.getElementById(
+            'save-shop-combo-btn'
+        );
+
+
+    try {
+
+        if (saveBtn) {
+
+            saveBtn.disabled = true;
+
+            saveBtn.innerHTML = `
+                <i class="fas fa-spinner fa-spin"></i>
+                Saving...
+            `;
+        }
+
+
+        let imageFile = null;
+
+
+        if (currentShop.plan === 'paid') {
+
+            const imageInput =
+                document.getElementById(
+                    'shop-combo-image'
+                );
+
+            imageFile =
+                imageInput?.files?.[0] ||
+                null;
+
+
+            if (imageFile) {
+
+                if (
+                    imageFile.type !== 'image/jpeg' ||
+                    !imageFile.name
+                        .toLowerCase()
+                        .endsWith('.jpg')
+                ) {
+
+                    alert(
+                        'Only JPG combo images are allowed.'
+                    );
+
+                    return;
+                }
+
+
+                if (
+                    imageFile.size >
+                    300 * 1024
+                ) {
+
+                    alert(
+                        'Your image exceeds the 300 KB size limit.'
+                    );
+
+                    return;
+                }
+            }
+        }
+
+
+        const {
+            data: combo,
+            error: comboError
+        } = await supabase
+            .from('combo_menus')
+            .insert([
+                {
+                    shop_id:
+                        currentShop.id,
+
+                    name:
+                        name,
+
+                    description:
+                        description || null,
+
+                    sale_price:
+                        salePrice,
+
+                    rating:
+                        rating,
+
+                    preparation_time:
+                        preparationTime,
+
+                    image_url:
+                        null,
+
+                    is_available:
+                        true
+                }
+            ])
+            .select()
+            .single();
+
+
+        if (comboError) {
+            throw comboError;
+        }
+
+
+        if (selectedMenuItems.length > 0) {
+
+            const rows =
+                selectedMenuItems.map(
+                    menuItemId => ({
+                        combo_id:
+                            combo.id,
+
+                        menu_item_id:
+                            menuItemId
+                    })
+                );
+
+
+            const {
+                error: menuLinkError
+            } = await supabase
+                .from('combo_menu_items')
+                .insert(rows);
+
+
+            if (menuLinkError) {
+                throw menuLinkError;
+            }
+        }
+
+
+        if (selectedExtraAddons.length > 0) {
+
+            const rows =
+                selectedExtraAddons.map(
+                    extraAddonId => ({
+                        combo_id:
+                            combo.id,
+
+                        extra_addon_id:
+                            extraAddonId
+                    })
+                );
+
+
+            const {
+                error: addonLinkError
+            } = await supabase
+                .from('combo_extra_addons')
+                .insert(rows);
+
+
+            if (addonLinkError) {
+                throw addonLinkError;
+            }
+        }
+
+
+        if (
+            imageFile &&
+            currentShop.plan === 'paid'
+        ) {
+
+            const uploadedImageUrl =
+                await uploadMenuImage(
+                    imageFile,
+                    currentShop.id,
+                    `combo-${combo.id}`
+                );
+
+
+            const {
+                error: imageUpdateError
+            } = await supabase
+                .from('combo_menus')
+                .update({
+                    image_url:
+                        uploadedImageUrl
+                })
+                .eq(
+                    'id',
+                    combo.id
+                )
+                .eq(
+                    'shop_id',
+                    currentShop.id
+                );
+
+
+            if (imageUpdateError) {
+                throw imageUpdateError;
+            }
+        }
+
+
+        showToast(
+            'Combo Meal added successfully!'
+        );
+
+
+        modal.remove();
+
+
+        await loadShopCombos();
+
+
+    } catch (error) {
+
+        console.error(
+            'Error adding Combo Meal:',
+            error
+        );
+
+        alert(
+            'Unable to add Combo Meal: ' +
+            error.message
+        );
+
+
+    } finally {
+
+        if (
+            saveBtn &&
+            document.body.contains(saveBtn)
+        ) {
+
+            saveBtn.disabled = false;
+
+            saveBtn.innerHTML = `
+                <i class="fas fa-save"></i>
+                Add Combo Meal
+            `;
+        }
+    }
+}
+
+function setupShopComboButton() {
+
+    const button =
+        document.getElementById(
+            'shop-add-combo-btn'
+        );
+
+    if (!button) {
+        return;
+    }
+
+    const newButton =
+        button.cloneNode(true);
+
+    button.parentNode.replaceChild(
+        newButton,
+        button
+    );
+
+    newButton.addEventListener(
+        'click',
+        () => {
+
+            showShopComboModal();
+
+        }
+    );
+}
+
+async function loadShopExtraAddons() {
+
+    if (!currentShop) {
+        return;
+    }
+
+
+    const container =
+        document.getElementById(
+            'shop-extra-addons-list'
+        );
+
+
+    if (!container) {
+        return;
+    }
+
+
+    try {
+
+        const {
+            data: extraAddons,
+            error
+        } = await supabase
+            .from('extra_addons')
+            .select('*')
+            .eq(
+                'shop_id',
+                currentShop.id
+            )
+            .order(
+                'name',
+                {
+                    ascending: true
+                }
+            );
+
+
+        if (error) {
+            throw error;
+        }
+
+
+        if (
+            !extraAddons ||
+            extraAddons.length === 0
+        ) {
+
+            container.innerHTML = `
+
+                <div class="empty-state">
+
+                    <i class="fas fa-plus-circle"></i>
+
+                    <p>
+                        No Extra Addons added yet.
+                    </p>
+
+                </div>
+            `;
+
+            return;
+        }
+
+
+        container.innerHTML =
+            extraAddons
+                .map(addon => `
+
+                    <div style="
+                        background: white;
+                        border: 1px solid #eee;
+                        border-radius: 12px;
+                        padding: 16px;
+                        margin-bottom: 12px;
+                    ">
+
+                        <div style="
+                            display: flex;
+                            justify-content: space-between;
+                            align-items: center;
+                            gap: 15px;
+                        ">
+
+                            <div style="flex: 1;">
+
+                                <strong>
+                                    ${escapeHtml(addon.name)}
+                                </strong>
+
+
+                                ${
+                                    addon.flavour
+                                        ? `
+                                            <div style="
+                                                font-size: 0.8rem;
+                                                color: #777;
+                                                margin-top: 4px;
+                                            ">
+                                                Flavour:
+                                                ${escapeHtml(addon.flavour)}
+                                            </div>
+                                        `
+                                        : ''
+                                }
+
+
+                                <div style="
+                                    font-size: 0.9rem;
+                                    color: var(--primary);
+                                    font-weight: 700;
+                                    margin-top: 5px;
+                                ">
+                                    R${Number(addon.price).toFixed(2)}
+                                </div>
+
+
+                                ${
+                                    addon.description
+                                        ? `
+                                            <div style="
+                                                color: #777;
+                                                font-size: 0.85rem;
+                                                margin-top: 6px;
+                                            ">
+                                                ${escapeHtml(addon.description)}
+                                            </div>
+                                        `
+                                        : ''
+                                }
+
+
+                                ${
+                                    addon.badge
+                                        ? `
+                                            <span style="
+                                                display: inline-block;
+                                                margin-top: 8px;
+                                                padding: 4px 10px;
+                                                border-radius: 20px;
+                                                background: var(--light);
+                                                color: var(--primary);
+                                                font-size: 0.75rem;
+                                                font-weight: 700;
+                                            ">
+                                                ${escapeHtml(addon.badge)}
+                                            </span>
+                                        `
+                                        : ''
+                                }
+
+                            </div>
+
+
+                                                        ${
+                                currentShop.plan === 'paid' &&
+                                addon.image_url
+
+                                    ? `
+                                        <img
+                                            src="${addon.image_url}"
+                                            alt="${escapeHtml(addon.name)}"
+                                            style="
+                                                width: 75px;
+                                                height: 65px;
+                                                object-fit: cover;
+                                                border-radius: 10px;
+                                                flex-shrink: 0;
+                                            "
+                                        >
+                                    `
+
+                                    : ''
+                            }
+
+                        </div>
+
+
+                        <div style="
+                            display: flex;
+                            gap: 8px;
+                            margin-top: 14px;
+                        ">
+
+                            <button
+                                class="btn-secondary"
+                                onclick="editShopExtraAddon(${addon.id})"
+                            >
+                                <i class="fas fa-edit"></i>
+                                Edit
+                            </button>
+
+                            <button
+                                class="btn-danger"
+                                onclick="deleteShopExtraAddon(${addon.id})"
+                            >
+                                <i class="fas fa-trash"></i>
+                                Delete
+                            </button>
+
+                        </div>
+
+
+                    </div>
+
+                `)
+                .join('');
+
+
+    } catch (error) {
+
+        console.error(
+            'Error loading Extra Addons:',
+            error
+        );
+
+
+        container.innerHTML = `
+
+            <div class="empty-state">
+
+                <p>
+                    Unable to load Extra Addons.
+                </p>
+
+            </div>
+        `;
+    }
+}
+
+window.deleteShopExtraAddon =
+async function(addonId) {
+
+    if (!currentShop) {
+        return;
+    }
+
+    const confirmed =
+        confirm(
+            'Delete this Extra Addon? This action cannot be undone.'
+        );
+
+    if (!confirmed) {
+        return;
+    }
+
+    try {
+
+        const { error } =
+            await supabase
+                .from('extra_addons')
+                .delete()
+                .eq('id', addonId)
+                .eq('shop_id', currentShop.id);
+
+        if (error) {
+            throw error;
+        }
+
+        showToast(
+            'Extra Addon deleted successfully!'
+        );
+
+        await loadShopExtraAddons();
+
+    } catch (error) {
+
+        console.error(
+            'Error deleting Extra Addon:',
+            error
+        );
+
+        alert(
+            'Unable to delete Extra Addon: ' +
+            error.message
+        );
+    }
+};
+
+window.editShopExtraAddon =
+async function(addonId) {
+
+    if (!currentShop) {
+        return;
+    }
+
+    try {
+
+        const {
+            data: addon,
+            error
+        } = await supabase
+            .from('extra_addons')
+            .select('*')
+            .eq('id', addonId)
+            .eq('shop_id', currentShop.id)
+            .single();
+
+        if (error) {
+            throw error;
+        }
+
+        const modal =
+            document.createElement('div');
+
+        modal.className =
+            'modal-overlay active';
+
+        modal.innerHTML = `
+
+            <div
+                class="page-modal"
+                style="max-width: 600px;"
+            >
+
+                <div class="page-header">
+
+                    <h2>Edit Extra Addon</h2>
+
+                    <button
+                        type="button"
+                        class="modal-close"
+                        onclick="
+                            this
+                                .closest('.modal-overlay')
+                                .remove()
+                        "
+                    >
+                        <i class="fas fa-times"></i>
+                    </button>
+
+                </div>
+
+
+                <div class="page-content">
+
+                    <div class="form-group">
+
+                        <label class="form-label">
+                            Item Name *
+                        </label>
+
+                        <input
+                            type="text"
+                            class="form-input"
+                            id="edit-extra-addon-name"
+                            value="${escapeHtml(addon.name || '')}"
+                        >
+
+                    </div>
+
+
+                    <div class="form-group">
+
+                        <label class="form-label">
+                            Description
+                        </label>
+
+                        <textarea
+                            class="form-textarea"
+                            id="edit-extra-addon-description"
+                        >${escapeHtml(addon.description || '')}</textarea>
+
+                    </div>
+
+
+                    <div class="form-group">
+
+                        <label class="form-label">
+                            Price (Rands) *
+                        </label>
+
+                        <input
+                            type="number"
+                            class="form-input"
+                            id="edit-extra-addon-price"
+                            min="0"
+                            step="0.01"
+                            value="${addon.price}"
+                        >
+
+                    </div>
+
+
+                    <div class="form-group">
+
+                        <label class="form-label">
+                            Flavour
+                        </label>
+
+                        <input
+                            type="text"
+                            class="form-input"
+                            id="edit-extra-addon-flavour"
+                            value="${escapeHtml(addon.flavour || '')}"
+                        >
+
+                    </div>
+
+
+                    <div class="form-group">
+
+                        <label class="form-label">
+                            Badge (Optional)
+                        </label>
+
+                        <input
+                            type="text"
+                            class="form-input"
+                            id="edit-extra-addon-badge"
+                            value="${escapeHtml(addon.badge || '')}"
+                        >
+
+                    </div>
+
+
+                    ${
+                        currentShop.plan === 'paid'
+
+                            ? `
+
+                                <div class="form-group">
+
+                                    <label class="form-label">
+                                        Menu Image
+                                    </label>
+
+                                    ${
+                                        addon.image_url
+                                            ? `
+                                                <img
+                                                    src="${addon.image_url}"
+                                                    alt="${escapeHtml(addon.name)}"
+                                                    style="
+                                                        width: 110px;
+                                                        height: 85px;
+                                                        object-fit: cover;
+                                                        border-radius: 10px;
+                                                        margin-bottom: 10px;
+                                                    "
+                                                >
+                                            `
+                                            : ''
+                                    }
+
+                                    <input
+                                        type="file"
+                                        class="form-input"
+                                        id="edit-extra-addon-image"
+                                        accept=".jpg,image/jpeg"
+                                    >
+
+                                    <small style="
+                                        display: block;
+                                        margin-top: 6px;
+                                        color: #666;
+                                    ">
+                                        JPG only. Maximum 300 KB.
+                                        Leave empty to keep current image.
+                                    </small>
+
+                                </div>
+
+                            `
+
+                            : ''
+                    }
+
+
+                    <button
+                        type="button"
+                        class="btn-primary"
+                        id="save-extra-addon-edit-btn"
+                        style="width: 100%;"
+                    >
+                        <i class="fas fa-save"></i>
+                        Save Changes
+                    </button>
+
+                </div>
+
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+
+        document
+            .getElementById(
+                'save-extra-addon-edit-btn'
+            )
+            .addEventListener(
+                'click',
+                async () => {
+
+                    await saveShopExtraAddonEdit(
+                        addonId,
+                        modal
+                    );
+
+                }
+            );
+
+    } catch (error) {
+
+        console.error(
+            'Unable to load Extra Addon:',
+            error
+        );
+
+        alert(
+            'Unable to load Extra Addon: ' +
+            error.message
+        );
+    }
+};
+
+async function saveShopExtraAddonEdit(
+    addonId,
+    modal
+) {
+
+    if (!currentShop) {
+        alert('Shop information is unavailable.');
+        return;
+    }
+
+
+    const name =
+        document
+            .getElementById(
+                'edit-extra-addon-name'
+            )
+            .value
+            .trim();
+
+    const description =
+        document
+            .getElementById(
+                'edit-extra-addon-description'
+            )
+            .value
+            .trim();
+
+    const price =
+        parseFloat(
+            document
+                .getElementById(
+                    'edit-extra-addon-price'
+                )
+                .value
+        );
+
+    const flavour =
+        document
+            .getElementById(
+                'edit-extra-addon-flavour'
+            )
+            .value
+            .trim();
+
+    const badge =
+        document
+            .getElementById(
+                'edit-extra-addon-badge'
+            )
+            .value
+            .trim();
+
+
+    if (
+        !name ||
+        !Number.isFinite(price) ||
+        price < 0
+    ) {
+
+        alert(
+            'Item Name and Price are required.'
+        );
+
+        return;
+    }
+
+
+    const saveBtn =
+        document.getElementById(
+            'save-extra-addon-edit-btn'
+        );
+
+
+    try {
+
+        if (saveBtn) {
+
+            saveBtn.disabled = true;
+
+            saveBtn.innerHTML = `
+                <i class="fas fa-spinner fa-spin"></i>
+                Saving...
+            `;
+        }
+
+
+        let uploadedImageUrl = null;
+
+
+        if (currentShop.plan === 'paid') {
+
+            const imageInput =
+                document.getElementById(
+                    'edit-extra-addon-image'
+                );
+
+            const imageFile =
+                imageInput?.files?.[0] ||
+                null;
+
+
+            if (imageFile) {
+
+                if (
+                    imageFile.type !== 'image/jpeg' ||
+                    !imageFile.name
+                        .toLowerCase()
+                        .endsWith('.jpg')
+                ) {
+
+                    alert(
+                        'Only JPG images are allowed.'
+                    );
+
+                    return;
+                }
+
+
+                if (
+                    imageFile.size >
+                    300 * 1024
+                ) {
+
+                    alert(
+                        'Your image exceeds the 300 KB size limit.'
+                    );
+
+                    return;
+                }
+
+
+                uploadedImageUrl =
+                    await uploadMenuImage(
+                        imageFile,
+                        currentShop.id,
+                        `extra-${addonId}`
+                    );
+            }
+        }
+
+
+        const {
+            error
+        } = await supabase
+            .from('extra_addons')
+            .update({
+
+                name:
+                    name,
+
+                description:
+                    description || null,
+
+                price:
+                    price,
+
+                flavour:
+                    flavour || null,
+
+                badge:
+                    badge || null,
+
+                ...(uploadedImageUrl
+                    ? {
+                        image_url:
+                            uploadedImageUrl
+                    }
+                    : {}),
+
+                updated_at:
+                    new Date()
+                        .toISOString()
+
+            })
+            .eq(
+                'id',
+                addonId
+            )
+            .eq(
+                'shop_id',
+                currentShop.id
+            );
+
+
+        if (error) {
+            throw error;
+        }
+
+
+        showToast(
+            'Extra Addon updated successfully!'
+        );
+
+
+        modal.remove();
+
+
+        await loadShopExtraAddons();
+
+
+    } catch (error) {
+
+        console.error(
+            'Error updating Extra Addon:',
+            error
+        );
+
+        alert(
+            'Unable to update Extra Addon: ' +
+            error.message
+        );
+
+
+    } finally {
+
+        if (
+            saveBtn &&
+            document.body.contains(saveBtn)
+        ) {
+
+            saveBtn.disabled = false;
+
+            saveBtn.innerHTML = `
+                <i class="fas fa-save"></i>
+                Save Changes
+            `;
+        }
+    }
+}
+
+async function loadShopCombos() {
+
+    if (!currentShop) {
+        return;
+    }
+
+
+    const container =
+        document.getElementById(
+            'shop-combo-list'
+        );
+
+
+    if (!container) {
+        return;
+    }
+
+
+    try {
+
+        const {
+            data: combos,
+            error
+        } = await supabase
+            .from('combo_menus')
+            .select('*')
+            .eq(
+                'shop_id',
+                currentShop.id
+            )
+            .order(
+                'created_at',
+                {
+                    ascending: false
+                }
+            );
+
+
+        if (error) {
+            throw error;
+        }
+
+
+        if (
+            !combos ||
+            combos.length === 0
+        ) {
+
+            container.innerHTML = `
+
+                <div class="empty-state">
+
+                    <i class="fas fa-box"></i>
+
+                    <p>
+                        No Combo Meals added yet.
+                    </p>
+
+                </div>
+            `;
+
+            return;
+        }
+
+
+        container.innerHTML =
+            combos
+                .map(combo => `
+
+                    <div style="
+                        background: white;
+                        border: 1px solid #eee;
+                        border-radius: 12px;
+                        padding: 16px;
+                        margin-bottom: 12px;
+                    ">
+
+                        <div style="
+                            display: flex;
+                            justify-content: space-between;
+                            gap: 15px;
+                            align-items: center;
+                        ">
+
+                            <div style="flex: 1;">
+
+                                <div style="
+                                    display: flex;
+                                    align-items: center;
+                                    gap: 8px;
+                                    flex-wrap: wrap;
+                                ">
+
+                                    <strong>
+                                        ${escapeHtml(combo.name)}
+                                    </strong>
+
+                                    ${
+                            item.on_sale &&
+                            item.sale_price !== null &&
+                            Number(item.sale_price) < Number(item.price)
+
+                                ? `
+                                    <span style="
+                                        background: #dc3545;
+                                        color: white;
+                                        font-size: 0.7rem;
+                                        font-weight: 700;
+                                        padding: 3px 8px;
+                                        border-radius: 20px;
+                                        margin-left: 6px;
+                                        white-space: nowrap;
+                                    ">
+                                        SALE
+                                    </span>
+                                `
+                                : ''
+                        }
+
+                                </div>
+
+
+                                <div style="
+                                    color: var(--primary);
+                                    font-weight: 700;
+                                    margin-top: 6px;
+                                ">
+                                    R${Number(
+                                        combo.sale_price
+                                    ).toFixed(2)}
+                                </div>
+
+
+                                ${
+                                    combo.description
+                                        ? `
+                                            <div style="
+                                                color: #777;
+                                                font-size: 0.85rem;
+                                                margin-top: 6px;
+                                            ">
+                                                ${escapeHtml(
+                                                    combo.description
+                                                )}
+                                            </div>
+                                        `
+                                        : ''
+                                }
+
+
+                                <div style="
+                                    color: #777;
+                                    font-size: 0.8rem;
+                                    margin-top: 7px;
+                                ">
+
+                                    ⏱️
+                                    ${escapeHtml(
+                                        combo.preparation_time
+                                    )}
+
+                                    ${
+                                        combo.rating
+                                            ? ` • ⭐ ${combo.rating}`
+                                            : ''
+                                    }
+
+                                </div>
+
+                            </div>
+
+
+                                                        ${
+                                currentShop.plan === 'paid' &&
+                                combo.image_url
+
+                                    ? `
+                                        <img
+                                            src="${combo.image_url}"
+                                            alt="${escapeHtml(combo.name)}"
+                                            style="
+                                                width: 80px;
+                                                height: 70px;
+                                                object-fit: cover;
+                                                border-radius: 10px;
+                                            "
+                                        >
+                                    `
+
+                                    : ''
+                            }
+
+                        </div>
+
+
+                        <div style="
+                            display: flex;
+                            gap: 8px;
+                            margin-top: 14px;
+                        ">
+
+                            <button
+                                class="btn-secondary"
+                                onclick="editShopCombo(${combo.id})"
+                            >
+                                <i class="fas fa-edit"></i>
+                                Edit
+                            </button>
+
+                            <button
+                                class="btn-danger"
+                                onclick="deleteShopCombo(${combo.id})"
+                            >
+                                <i class="fas fa-trash"></i>
+                                Delete
+                            </button>
+
+                        </div>
+
+
+                    </div>
+
+                `)
+                .join('');
+
+
+    } catch (error) {
+
+        console.error(
+            'Error loading Combo Meals:',
+            error
+        );
+
+
+        container.innerHTML = `
+
+            <div class="empty-state">
+
+                <p>
+                    Unable to load Combo Meals.
+                </p>
+
+            </div>
+        `;
+        }
+}
+
+
+window.deleteShopCombo =
+async function(comboId) {
+
+    if (!currentShop) {
+        return;
+    }
+
+    const confirmed =
+        confirm(
+            'Delete this Combo Meal? This action cannot be undone.'
+        );
+
+    if (!confirmed) {
+        return;
+    }
+
+    try {
+
+        const {
+            error: menuLinkError
+        } = await supabase
+            .from('combo_menu_items')
+            .delete()
+            .eq(
+                'combo_id',
+                comboId
+            );
+
+        if (menuLinkError) {
+            throw menuLinkError;
+        }
+
+
+        const {
+            error: addonLinkError
+        } = await supabase
+            .from('combo_extra_addons')
+            .delete()
+            .eq(
+                'combo_id',
+                comboId
+            );
+
+        if (addonLinkError) {
+            throw addonLinkError;
+        }
+
+
+        const {
+            error
+        } = await supabase
+            .from('combo_menus')
+            .delete()
+            .eq(
+                'id',
+                comboId
+            )
+            .eq(
+                'shop_id',
+                currentShop.id
+            );
+
+        if (error) {
+            throw error;
+        }
+
+
+        showToast(
+            'Combo Meal deleted successfully!'
+        );
+
+
+        await loadShopCombos();
+
+
+    } catch (error) {
+
+        console.error(
+            'Error deleting Combo Meal:',
+            error
+        );
+
+        alert(
+            'Unable to delete Combo Meal: ' +
+            error.message
+        );
+    }
+};
+
+
+window.editShopCombo =
+async function(comboId) {
+
+    if (!currentShop) {
+        return;
+    }
+
+    try {
+
+        const [
+            comboResult,
+            menuItemsResult,
+            extraAddonsResult,
+            selectedMenuResult,
+            selectedExtraResult
+        ] = await Promise.all([
+
+            supabase
+                .from('combo_menus')
+                .select('*')
+                .eq('id', comboId)
+                .eq('shop_id', currentShop.id)
+                .single(),
+
+            supabase
+                .from('menu_items')
+                .select(
+                    'id, name, price, on_sale, sale_price'
+                )
+                .eq('shop_id', currentShop.id)
+                .eq('is_available', true)
+                .order('name'),
+
+            supabase
+                .from('extra_addons')
+                .select(
+                    'id, name, price, flavour'
+                )
+                .eq('shop_id', currentShop.id)
+                .eq('is_available', true)
+                .order('name'),
+
+            supabase
+                .from('combo_menu_items')
+                .select('menu_item_id')
+                .eq('combo_id', comboId),
+
+            supabase
+                .from('combo_extra_addons')
+                .select('extra_addon_id')
+                .eq('combo_id', comboId)
+
+        ]);
+
+
+        if (comboResult.error) {
+            throw comboResult.error;
+        }
+
+        if (menuItemsResult.error) {
+            throw menuItemsResult.error;
+        }
+
+        if (extraAddonsResult.error) {
+            throw extraAddonsResult.error;
+        }
+
+        if (selectedMenuResult.error) {
+            throw selectedMenuResult.error;
+        }
+
+        if (selectedExtraResult.error) {
+            throw selectedExtraResult.error;
+        }
+
+
+        const combo =
+            comboResult.data;
+
+        const menuItems =
+            menuItemsResult.data || [];
+
+        const extraAddons =
+            extraAddonsResult.data || [];
+
+
+        const selectedMenuIds =
+            (selectedMenuResult.data || [])
+                .map(
+                    row =>
+                        Number(row.menu_item_id)
+                );
+
+
+        const selectedExtraIds =
+            (selectedExtraResult.data || [])
+                .map(
+                    row =>
+                        Number(row.extra_addon_id)
+                );
+
+
+        const modal =
+            document.createElement('div');
+
+        modal.className =
+            'modal-overlay active';
+
+
+        modal.innerHTML = `
+
+            <div
+                class="page-modal"
+                style="max-width: 700px;"
+            >
+
+                <div class="page-header">
+
+                    <h2>
+                        Edit Combo Meal
+                    </h2>
+
+                    <button
+                        type="button"
+                        class="modal-close"
+                        onclick="
+                            this
+                                .closest('.modal-overlay')
+                                .remove()
+                        "
+                    >
+                        <i class="fas fa-times"></i>
+                    </button>
+
+                </div>
+
+
+                <div class="page-content">
+
+
+                    <div class="form-group">
+
+                        <label class="form-label">
+                            Combo Name *
+                        </label>
+
+                        <input
+                            type="text"
+                            class="form-input"
+                            id="edit-combo-name"
+                            value="${escapeHtml(combo.name || '')}"
+                        >
+
+                    </div>
+
+
+                    <div class="form-group">
+
+                        <label class="form-label">
+                            Description
+                        </label>
+
+                        <textarea
+                            class="form-textarea"
+                            id="edit-combo-description"
+                        >${escapeHtml(combo.description || '')}</textarea>
+
+                    </div>
+
+
+                    <div class="form-group">
+
+                        <label class="form-label">
+                            Sale Price (Rands) *
+                        </label>
+
+                        <input
+                            type="number"
+                            class="form-input"
+                            id="edit-combo-sale-price"
+                            min="0"
+                            step="0.01"
+                            value="${combo.sale_price}"
+                        >
+
+                    </div>
+
+
+                    <div class="form-group">
+
+                        <label class="form-label">
+                            Rating (Optional)
+                        </label>
+
+                        <input
+                            type="number"
+                            class="form-input"
+                            id="edit-combo-rating"
+                            min="0"
+                            max="5"
+                            step="0.1"
+                            value="${
+                                combo.rating !== null &&
+                                combo.rating !== undefined
+                                    ? combo.rating
+                                    : ''
+                            }"
+                        >
+
+                    </div>
+
+
+                    <div class="form-group">
+
+                        <label class="form-label">
+                            Preparation Time *
+                        </label>
+
+                        <input
+                            type="text"
+                            class="form-input"
+                            id="edit-combo-prep-time"
+                            value="${escapeHtml(
+                                combo.preparation_time || ''
+                            )}"
+                        >
+
+                    </div>
+
+
+                    ${
+                        currentShop.plan === 'paid'
+
+                            ? `
+
+                                <div class="form-group">
+
+                                    <label class="form-label">
+                                        Combo Menu Image
+                                    </label>
+
+                                    ${
+                                        combo.image_url
+                                            ? `
+                                                <img
+                                                    src="${combo.image_url}"
+                                                    alt="${escapeHtml(combo.name)}"
+                                                    style="
+                                                        width: 120px;
+                                                        height: 90px;
+                                                        object-fit: cover;
+                                                        border-radius: 10px;
+                                                        display: block;
+                                                        margin-bottom: 10px;
+                                                    "
+                                                >
+                                            `
+                                            : ''
+                                    }
+
+                                    <input
+                                        type="file"
+                                        class="form-input"
+                                        id="edit-combo-image"
+                                        accept=".jpg,image/jpeg"
+                                    >
+
+                                    <small style="
+                                        display: block;
+                                        margin-top: 6px;
+                                        color: #666;
+                                    ">
+                                        JPG only. Maximum 300 KB.
+                                        Leave empty to keep the current image.
+                                    </small>
+
+                                </div>
+
+                            `
+
+                            : ''
+                    }
+
+
+                    <div style="
+                        border-top: 1px solid #eee;
+                        padding-top: 20px;
+                        margin-top: 15px;
+                    ">
+
+                        <div style="
+                            display: flex;
+                            justify-content: space-between;
+                            align-items: center;
+                            margin-bottom: 10px;
+                        ">
+
+                            <div>
+                                <strong>
+                                    Menu Items
+                                </strong>
+
+                                <div style="
+                                    color: #666;
+                                    font-size: 0.8rem;
+                                ">
+                                    Maximum 5
+                                </div>
+                            </div>
+
+                            <span
+                                id="edit-combo-menu-counter"
+                            >
+                                ${selectedMenuIds.length} / 5
+                            </span>
+
+                        </div>
+
+
+                        <div style="
+                            display: grid;
+                            gap: 8px;
+                        ">
+
+                            ${
+                                menuItems
+                                    .map(item => `
+
+                                        <label style="
+                                            display: flex;
+                                            justify-content: space-between;
+                                            align-items: center;
+                                            gap: 10px;
+                                            border: 1px solid #eee;
+                                            border-radius: 10px;
+                                            padding: 10px 12px;
+                                        ">
+
+                                            <div style="
+                                                display: flex;
+                                                align-items: center;
+                                                gap: 10px;
+                                            ">
+
+                                                <input
+                                                    type="checkbox"
+                                                    class="edit-combo-menu-checkbox"
+                                                    value="${item.id}"
+                                                    ${
+                                                        selectedMenuIds.includes(
+                                                            Number(item.id)
+                                                        )
+                                                            ? 'checked'
+                                                            : ''
+                                                    }
+                                                >
+
+                                                <span>
+                                                    ${escapeHtml(item.name)}
+                                                </span>
+
+                                            </div>
+
+
+                                            <span style="
+                                                color: #666;
+                                                font-size: 0.85rem;
+                                            ">
+                                                R${Number(
+                                                    item.on_sale &&
+                                                    item.sale_price !== null
+                                                        ? item.sale_price
+                                                        : item.price
+                                                ).toFixed(2)}
+                                            </span>
+
+                                        </label>
+
+                                    `)
+                                    .join('')
+                            }
+
+                        </div>
+
+                    </div>
+
+
+                    <div style="
+                        border-top: 1px solid #eee;
+                        padding-top: 20px;
+                        margin-top: 25px;
+                    ">
+
+                        <div style="
+                            display: flex;
+                            justify-content: space-between;
+                            align-items: center;
+                            margin-bottom: 10px;
+                        ">
+
+                            <div>
+                                <strong>
+                                    Extra Addons
+                                </strong>
+
+                                <div style="
+                                    color: #666;
+                                    font-size: 0.8rem;
+                                ">
+                                    Maximum 5
+                                </div>
+                            </div>
+
+                            <span
+                                id="edit-combo-extra-counter"
+                            >
+                                ${selectedExtraIds.length} / 5
+                            </span>
+
+                        </div>
+
+
+                        <div style="
+                            display: grid;
+                            gap: 8px;
+                        ">
+
+                            ${
+                                extraAddons
+                                    .map(addon => `
+
+                                        <label style="
+                                            display: flex;
+                                            justify-content: space-between;
+                                            align-items: center;
+                                            gap: 10px;
+                                            border: 1px solid #eee;
+                                            border-radius: 10px;
+                                            padding: 10px 12px;
+                                        ">
+
+                                            <div style="
+                                                display: flex;
+                                                align-items: center;
+                                                gap: 10px;
+                                            ">
+
+                                                <input
+                                                    type="checkbox"
+                                                    class="edit-combo-extra-checkbox"
+                                                    value="${addon.id}"
+                                                    ${
+                                                        selectedExtraIds.includes(
+                                                            Number(addon.id)
+                                                        )
+                                                            ? 'checked'
+                                                            : ''
+                                                    }
+                                                >
+
+                                                <span>
+                                                    ${escapeHtml(addon.name)}
+
+                                                    ${
+                                                        addon.flavour
+                                                            ? ` (${escapeHtml(
+                                                                addon.flavour
+                                                            )})`
+                                                            : ''
+                                                    }
+                                                </span>
+
+                                            </div>
+
+
+                                            <span style="
+                                                color: #666;
+                                                font-size: 0.85rem;
+                                            ">
+                                                R${Number(
+                                                    addon.price
+                                                ).toFixed(2)}
+                                            </span>
+
+                                        </label>
+
+                                    `)
+                                    .join('')
+                            }
+
+                        </div>
+
+                    </div>
+
+
+                    <button
+                        type="button"
+                        class="btn-primary"
+                        id="save-combo-edit-btn"
+                        style="
+                            width: 100%;
+                            margin-top: 25px;
+                        "
+                    >
+                        <i class="fas fa-save"></i>
+                        Save Changes
+                    </button>
+
+                </div>
+
+            </div>
+        `;
+
+
+        document.body.appendChild(
+            modal
+        );
+
+
+        const menuCheckboxes =
+            modal.querySelectorAll(
+                '.edit-combo-menu-checkbox'
+            );
+
+
+        menuCheckboxes.forEach(
+            checkbox => {
+
+                checkbox.addEventListener(
+                    'change',
+                    function() {
+
+                        const checked =
+                            modal.querySelectorAll(
+                                '.edit-combo-menu-checkbox:checked'
+                            );
+
+                        if (checked.length > 5) {
+
+                            this.checked = false;
+
+                            alert(
+                                'A combo can contain a maximum of 5 menu items.'
+                            );
+
+                            return;
+                        }
+
+
+                        document
+                            .getElementById(
+                                'edit-combo-menu-counter'
+                            )
+                            .textContent =
+                                `${checked.length} / 5`;
+
+                    }
+                );
+            }
+        );
+
+
+        const extraCheckboxes =
+            modal.querySelectorAll(
+                '.edit-combo-extra-checkbox'
+            );
+
+
+        extraCheckboxes.forEach(
+            checkbox => {
+
+                checkbox.addEventListener(
+                    'change',
+                    function() {
+
+                        const checked =
+                            modal.querySelectorAll(
+                                '.edit-combo-extra-checkbox:checked'
+                            );
+
+                        if (checked.length > 5) {
+
+                            this.checked = false;
+
+                            alert(
+                                'A combo can contain a maximum of 5 Extra Addons.'
+                            );
+
+                            return;
+                        }
+
+
+                        document
+                            .getElementById(
+                                'edit-combo-extra-counter'
+                            )
+                            .textContent =
+                                `${checked.length} / 5`;
+
+                    }
+                );
+            }
+        );
+
+
+        document
+            .getElementById(
+                'save-combo-edit-btn'
+            )
+            .addEventListener(
+                'click',
+                async () => {
+
+                    await saveShopComboEdit(
+                        comboId,
+                        modal
+                    );
+
+                }
+            );
+
+
+    } catch (error) {
+
+        console.error(
+            'Unable to edit Combo Meal:',
+            error
+        );
+
+        alert(
+            'Unable to edit Combo Meal: ' +
+            error.message
+        );
+    }
+};
+
+async function saveShopComboEdit(
+    comboId,
+    modal
+) {
+
+    if (!currentShop) {
+        alert('Shop information is unavailable.');
+        return;
+    }
+
+    const name =
+        document
+            .getElementById('edit-combo-name')
+            .value
+            .trim();
+
+    const description =
+        document
+            .getElementById('edit-combo-description')
+            .value
+            .trim();
+
+    const salePrice =
+        parseFloat(
+            document
+                .getElementById('edit-combo-sale-price')
+                .value
+        );
+
+    const ratingValue =
+        document
+            .getElementById('edit-combo-rating')
+            .value;
+
+    const rating =
+        ratingValue
+            ? parseFloat(ratingValue)
+            : null;
+
+    const preparationTime =
+        document
+            .getElementById('edit-combo-prep-time')
+            .value
+            .trim();
+
+    const selectedMenuItems =
+        Array.from(
+            modal.querySelectorAll(
+                '.edit-combo-menu-checkbox:checked'
+            )
+        ).map(
+            checkbox =>
+                Number(checkbox.value)
+        );
+
+    const selectedExtraAddons =
+        Array.from(
+            modal.querySelectorAll(
+                '.edit-combo-extra-checkbox:checked'
+            )
+        ).map(
+            checkbox =>
+                Number(checkbox.value)
+        );
+
+
+    if (
+        !name ||
+        !Number.isFinite(salePrice) ||
+        salePrice < 0 ||
+        !preparationTime
+    ) {
+
+        alert(
+            'Combo Name, Sale Price and Preparation Time are required.'
+        );
+
+        return;
+    }
+
+
+    if (
+        rating !== null &&
+        (
+            !Number.isFinite(rating) ||
+            rating < 0 ||
+            rating > 5
+        )
+    ) {
+
+        alert(
+            'Rating must be between 0 and 5.'
+        );
+
+        return;
+    }
+
+
+    if (selectedMenuItems.length > 5) {
+
+        alert(
+            'A combo can contain a maximum of 5 menu items.'
+        );
+
+        return;
+    }
+
+
+    if (selectedExtraAddons.length > 5) {
+
+        alert(
+            'A combo can contain a maximum of 5 Extra Addons.'
+        );
+
+        return;
+    }
+
+
+    if (
+        selectedMenuItems.length === 0 &&
+        selectedExtraAddons.length === 0
+    ) {
+
+        alert(
+            'Please select at least one menu item or Extra Addon.'
+        );
+
+        return;
+    }
+
+
+    const saveBtn =
+        document.getElementById(
+            'save-combo-edit-btn'
+        );
+
+
+    try {
+
+        if (saveBtn) {
+
+            saveBtn.disabled = true;
+
+            saveBtn.innerHTML = `
+                <i class="fas fa-spinner fa-spin"></i>
+                Saving...
+            `;
+        }
+
+
+        let uploadedImageUrl = null;
+
+
+        if (currentShop.plan === 'paid') {
+
+            const imageInput =
+                document.getElementById(
+                    'edit-combo-image'
+                );
+
+            const imageFile =
+                imageInput?.files?.[0] ||
+                null;
+
+
+            if (imageFile) {
+
+                if (
+                    imageFile.type !== 'image/jpeg' ||
+                    !imageFile.name
+                        .toLowerCase()
+                        .endsWith('.jpg')
+                ) {
+
+                    alert(
+                        'Only JPG combo images are allowed.'
+                    );
+
+                    return;
+                }
+
+
+                if (
+                    imageFile.size >
+                    300 * 1024
+                ) {
+
+                    alert(
+                        'Your image exceeds the 300 KB size limit.'
+                    );
+
+                    return;
+                }
+
+
+                uploadedImageUrl =
+                    await uploadMenuImage(
+                        imageFile,
+                        currentShop.id,
+                        `combo-${comboId}`
+                    );
+            }
+        }
+
+
+        const updateData = {
+
+            name:
+                name,
+
+            description:
+                description || null,
+
+            sale_price:
+                salePrice,
+
+            rating:
+                rating,
+
+            preparation_time:
+                preparationTime
+
+        };
+
+
+        if (uploadedImageUrl) {
+
+            updateData.image_url =
+                uploadedImageUrl;
+        }
+
+
+        const {
+            error: comboUpdateError
+        } = await supabase
+            .from('combo_menus')
+            .update(updateData)
+            .eq('id', comboId)
+            .eq(
+                'shop_id',
+                currentShop.id
+            );
+
+
+        if (comboUpdateError) {
+            throw comboUpdateError;
+        }
+
+
+        const {
+            error: deleteMenuLinksError
+        } = await supabase
+            .from('combo_menu_items')
+            .delete()
+            .eq('combo_id', comboId);
+
+
+        if (deleteMenuLinksError) {
+            throw deleteMenuLinksError;
+        }
+
+
+        const {
+            error: deleteExtraLinksError
+        } = await supabase
+            .from('combo_extra_addons')
+            .delete()
+            .eq('combo_id', comboId);
+
+
+        if (deleteExtraLinksError) {
+            throw deleteExtraLinksError;
+        }
+
+
+        if (selectedMenuItems.length > 0) {
+
+            const rows =
+                selectedMenuItems.map(
+                    menuItemId => ({
+                        combo_id:
+                            comboId,
+
+                        menu_item_id:
+                            menuItemId
+                    })
+                );
+
+
+            const {
+                error: menuInsertError
+            } = await supabase
+                .from('combo_menu_items')
+                .insert(rows);
+
+
+            if (menuInsertError) {
+                throw menuInsertError;
+            }
+        }
+
+
+        if (
+            selectedExtraAddons.length > 0
+        ) {
+
+            const rows =
+                selectedExtraAddons.map(
+                    extraAddonId => ({
+                        combo_id:
+                            comboId,
+
+                        extra_addon_id:
+                            extraAddonId
+                    })
+                );
+
+
+            const {
+                error: extraInsertError
+            } = await supabase
+                .from('combo_extra_addons')
+                .insert(rows);
+
+
+            if (extraInsertError) {
+                throw extraInsertError;
+            }
+        }
+
+
+        showToast(
+            'Combo Meal updated successfully!'
+        );
+
+
+        modal.remove();
+
+
+        await loadShopCombos();
+
+
+    } catch (error) {
+
+        console.error(
+            'Error updating Combo Meal:',
+            error
+        );
+
+        alert(
+            'Unable to update Combo Meal: ' +
+            error.message
+        );
+
+
+    } finally {
+
+        if (
+            saveBtn &&
+            document.body.contains(saveBtn)
+        ) {
+
+            saveBtn.disabled = false;
+
+            saveBtn.innerHTML = `
+                <i class="fas fa-save"></i>
+                Save Changes
+            `;
+        }
+    }
+}
+
 async function loadShopAdminMenuEditor() {
     if (!currentShop) return;
 
@@ -5674,6 +12444,32 @@ async function loadShopAdminMenuEditor() {
             .order('name');
 
         if (error) throw error;
+        await loadShopExtraAddons();
+
+setupShopExtraAddonButton();
+await loadShopCombos();
+
+setupShopComboButton();
+        const limitInfo =
+    document.getElementById(
+        'shop-menu-limit-info'
+    );
+
+if (limitInfo) {
+
+    const used =
+        menuItems?.length || 0;
+
+    limitInfo.textContent =
+        `Menu items: ${used} / 20`;
+
+    if (used >= 20) {
+        limitInfo.style.color =
+            '#dc3545';
+    }
+}
+
+setupShopMenuAddButton();
 
         if (!menuItems || menuItems.length === 0) {
             container.innerHTML = `
@@ -5719,13 +12515,29 @@ async function loadShopAdminMenuEditor() {
 
                     </div>
 
-                    <button
-                        class="btn-secondary"
-                        onclick="editShopAdminMenuItem(${item.id})"
-                    >
-                        <i class="fas fa-edit"></i>
-                        Edit
-                    </button>
+            <div style="
+                display: flex;
+                gap: 8px;
+                align-items: center;
+            ">
+
+                <button
+                    class="btn-secondary"
+                    onclick="editShopAdminMenuItem(${item.id})"
+                >
+                    <i class="fas fa-edit"></i>
+                    Edit
+                </button>
+
+                <button
+                    class="btn-danger"
+                    onclick="deleteShopAdminMenuItem(${item.id})"
+                >
+                    <i class="fas fa-trash"></i>
+                    Delete
+                </button>
+
+            </div>
 
                 </div>
 
@@ -5745,6 +12557,83 @@ async function loadShopAdminMenuEditor() {
         `;
     }
 }
+
+window.deleteShopAdminMenuItem =
+async function(itemId) {
+
+    if (!currentShop) {
+        return;
+    }
+
+    const confirmed =
+        confirm(
+            'Delete this menu item? This action cannot be undone.'
+        );
+
+    if (!confirmed) {
+        return;
+    }
+
+    try {
+
+        // Delete free add-ons first
+        const {
+            error: addonError
+        } = await supabase
+            .from('menu_item_addons')
+            .delete()
+            .eq(
+                'menu_item_id',
+                itemId
+            );
+
+        if (addonError) {
+            throw addonError;
+        }
+
+
+        // Delete only if the item belongs
+        // to the logged-in shop
+        const {
+            error
+        } = await supabase
+            .from('menu_items')
+            .delete()
+            .eq(
+                'id',
+                itemId
+            )
+            .eq(
+                'shop_id',
+                currentShop.id
+            );
+
+        if (error) {
+            throw error;
+        }
+
+
+        showToast(
+            'Menu item deleted successfully!'
+        );
+
+
+        await loadShopAdminMenuEditor();
+
+
+    } catch (error) {
+
+        console.error(
+            'Error deleting Shop Admin menu item:',
+            error
+        );
+
+        alert(
+            'Unable to delete menu item: ' +
+            error.message
+        );
+    }
+};
 
 window.editShopAdminMenuItem = async function(itemId) {
 
@@ -5831,6 +12720,75 @@ window.editShopAdminMenuItem = async function(itemId) {
 
                     </div>
 
+                    <div class="form-group">
+
+    <label
+        class="form-label"
+        style="
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            cursor: pointer;
+        "
+    >
+
+        <input
+            type="checkbox"
+            id="shop-edit-item-on-sale"
+            ${menuItem.on_sale ? 'checked' : ''}
+        >
+
+        Put this menu item on sale
+
+    </label>
+
+    <small style="
+        display: block;
+        color: #666;
+        margin-top: 5px;
+    ">
+        Customers will see a SALE badge and the discounted price.
+    </small>
+
+</div>
+
+
+<div
+    class="form-group"
+    id="shop-edit-sale-price-group"
+    style="
+        ${menuItem.on_sale ? '' : 'display: none;'}
+    "
+>
+
+    <label class="form-label">
+        Sale Price (Rands) *
+    </label>
+
+    <input
+        type="number"
+        step="0.01"
+        min="0"
+        class="form-input"
+        id="shop-edit-item-sale-price"
+        value="${
+            menuItem.sale_price !== null &&
+            menuItem.sale_price !== undefined
+                ? menuItem.sale_price
+                : ''
+        }"
+        placeholder="e.g. 65.00"
+    >
+
+    <small style="
+        display: block;
+        color: #666;
+        margin-top: 5px;
+    ">
+        Sale price must be lower than the normal price.
+    </small>
+
+</div>
 
                     <div class="form-group">
 
@@ -5974,6 +12932,34 @@ window.editShopAdminMenuItem = async function(itemId) {
 
         document.body.appendChild(modal);
 
+        const saleToggle =
+    document.getElementById(
+        'shop-edit-item-on-sale'
+    );
+
+const salePriceGroup =
+    document.getElementById(
+        'shop-edit-sale-price-group'
+    );
+
+
+if (
+    saleToggle &&
+    salePriceGroup
+) {
+
+    saleToggle.addEventListener(
+        'change',
+        function() {
+
+            salePriceGroup.style.display =
+                this.checked
+                    ? 'block'
+                    : 'none';
+        }
+    );
+}
+
 
         document
             .getElementById('save-shop-menu-edit-btn')
@@ -6050,6 +13036,27 @@ async function saveShopAdminMenuItem(
             ? parseFloat(ratingValue)
             : null;
 
+            const onSale =
+    document
+        .getElementById(
+            'shop-edit-item-on-sale'
+        )
+        .checked;
+
+
+const salePriceValue =
+    document
+        .getElementById(
+            'shop-edit-item-sale-price'
+        )
+        .value;
+
+
+const salePrice =
+    salePriceValue
+        ? parseFloat(salePriceValue)
+        : null;
+
 
     if (!name || !price || !category) {
 
@@ -6059,6 +13066,31 @@ async function saveShopAdminMenuItem(
 
         return;
     }
+
+    if (onSale) {
+
+    if (
+        !Number.isFinite(salePrice) ||
+        salePrice < 0
+    ) {
+
+        alert(
+            'Please enter a valid Sale Price.'
+        );
+
+        return;
+    }
+
+
+    if (salePrice >= price) {
+
+        alert(
+            'Sale Price must be lower than the normal price.'
+        );
+
+        return;
+    }
+}
 
 
     let imageFile = null;
@@ -6128,19 +13160,27 @@ async function saveShopAdminMenuItem(
 
         const updateData = {
 
-            name: name,
+    name: name,
 
-            description: description,
+    description: description,
 
-            price: price,
+    price: price,
 
-            category: category,
+    category: category,
 
-            badge: badge || null,
+    badge: badge || null,
 
-            rating: rating
+    rating: rating,
 
-        };
+    on_sale:
+        onSale,
+
+    sale_price:
+        onSale
+            ? salePrice
+            : null
+
+};
 
 
         if (uploadedImageUrl) {
@@ -7505,6 +14545,57 @@ async function startShopSubscriptionPayment() {
         return;
     }
 
+    const billingMonth =
+    getEffectiveShopBillingMonth();
+
+
+const {
+    data: existingPaidPayment,
+    error: paidPaymentError
+} = await supabase
+    .from('shop_subscription_payments')
+    .select('id, status, billing_month')
+    .eq(
+        'shop_id',
+        currentShop.id
+    )
+    .eq(
+        'billing_month',
+        billingMonth
+    )
+    .eq(
+        'status',
+        'paid'
+    )
+    .maybeSingle();
+
+
+if (paidPaymentError) {
+
+    console.error(
+        'Unable to check paid subscription month:',
+        paidPaymentError
+    );
+
+    alert(
+        'Unable to verify your subscription status. Please try again.'
+    );
+
+    return;
+}
+
+
+if (existingPaidPayment) {
+
+    alert(
+        'This subscription month has already been paid.'
+    );
+
+    await loadShopPayments();
+
+    return;
+}
+
     const {
     data: existingPendingPayment,
     error: pendingPaymentError
@@ -7514,7 +14605,7 @@ async function startShopSubscriptionPayment() {
     .eq('shop_id', currentShop.id)
     .eq(
     'billing_month',
-    getEffectiveShopBillingMonth()
+    billingMonth
 )
     .eq('status', 'pending')
     .maybeSingle();
@@ -8016,7 +15107,6 @@ function showSubscriptionOfflineCustomerView() {
                     border-radius: 28px;
                     padding: 38px 28px;
                     text-align: center;
-                    box-shadow: 0 8px 28px rgba(0,0,0,0.06);
                 "
             >
 
@@ -8095,8 +15185,6 @@ function showTemporarilyClosedMessage() {
                 max-width: 400px;
                 width: 100%;
                 text-align: center;
-                border: 1px solid #f0f0f0;
-                box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
                 position: relative;
                 overflow: hidden;
             }
@@ -8108,7 +15196,6 @@ function showTemporarilyClosedMessage() {
                 left: 0;
                 right: 0;
                 height: 6px;
-                background: linear-gradient(90deg, #ffa726, #ff9800, #fb8c00, #f57c00);
             }
             
             .temp-closed-icon {
@@ -8171,7 +15258,6 @@ function showTemporarilyClosedMessage() {
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
             }
             
             .shop-detail-icon i {
@@ -8329,7 +15415,6 @@ function showShopClosedMessage() {
                 max-width: 420px;
                 width: 100%;
                 border: 1px solid #f0f0f0;
-                box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
             }
             
             .closed-icon {
@@ -8546,18 +15631,412 @@ function setupAddToCartListeners() {
         if (addButton) {
             const foodCard = addButton.closest('.food-card');
             if (foodCard) {
-                const itemId = foodCard.getAttribute('data-item-id');
-                console.log('Add to cart clicked, itemId:', itemId);
                 
-                if (itemId && itemId !== "null" && itemId !== "undefined") {
-                    addToCart(parseInt(itemId));
-                } else {
-                    console.error('Invalid item ID from food card:', itemId);
-                    showToast('Error: Could not add item to cart', 'error');
-                }
+                const itemId =
+    foodCard.getAttribute(
+        'data-item-id'
+    );
+
+const itemType =
+    foodCard.getAttribute(
+        'data-item-type'
+    ) || 'menu';
+
+
+if (
+    !itemId ||
+    itemId === 'null' ||
+    itemId === 'undefined'
+) {
+
+    showToast(
+        'Error: Could not add item to cart',
+        'error'
+    );
+
+    return;
+}
+
+
+if (itemType === 'extra-addon') {
+
+    addExtraAddonToCart(
+        Number(itemId)
+    );
+
+} else if (itemType === 'combo') {
+
+    addComboToCart(
+        Number(itemId)
+    );
+
+} else {
+
+    addToCart(
+        Number(itemId)
+    );
+}
             }
         }
     });
+}
+
+async function addExtraAddonToCart(
+    addonId
+) {
+
+    if (!currentShop) {
+        return;
+    }
+
+    try {
+
+        const {
+            data: addon,
+            error
+        } = await supabase
+            .from('extra_addons')
+            .select('*')
+            .eq('id', addonId)
+            .eq(
+                'shop_id',
+                currentShop.id
+            )
+            .single();
+
+
+        if (error) {
+            throw error;
+        }
+
+
+        const cartId =
+            `extra-${addon.id}`;
+
+
+        const existing =
+            cart.findIndex(
+                item =>
+                    item.cart_id === cartId
+            );
+
+
+        if (existing > -1) {
+
+            cart[existing].quantity += 1;
+
+        } else {
+
+            cart.push({
+
+                cart_id:
+                    cartId,
+
+                id:
+                    addon.id,
+
+                item_type:
+                    'extra-addon',
+
+                name:
+                    addon.name,
+
+                description:
+                    addon.description,
+
+                price:
+                    Number(addon.price),
+
+                original_price:
+                    Number(addon.price),
+
+                quantity:
+                    1,
+
+                image_url:
+                    addon.image_url,
+
+                category:
+                    'Add-ons',
+
+                badge:
+                    addon.badge,
+
+                flavour:
+                    addon.flavour,
+
+                addons: [],
+
+                selectedAddons: []
+
+            });
+        }
+
+
+        updateCartIcon();
+
+
+        showToast(
+            `${addon.name} added to cart!`
+        );
+
+
+    } catch (error) {
+
+        console.error(
+            'Error adding Extra Addon:',
+            error
+        );
+
+        showToast(
+            'Unable to add Extra Addon',
+            'error'
+        );
+    }
+}
+
+async function addComboToCart(
+    comboId
+) {
+
+    if (!currentShop) {
+        return;
+    }
+
+    try {
+
+        const [
+            comboResult,
+            menuLinksResult,
+            extraLinksResult
+        ] = await Promise.all([
+
+            supabase
+                .from('combo_menus')
+                .select('*')
+                .eq('id', comboId)
+                .eq(
+                    'shop_id',
+                    currentShop.id
+                )
+                .single(),
+
+            supabase
+                .from('combo_menu_items')
+                .select(
+                    'menu_item_id'
+                )
+                .eq(
+                    'combo_id',
+                    comboId
+                ),
+
+            supabase
+                .from('combo_extra_addons')
+                .select(
+                    'extra_addon_id'
+                )
+                .eq(
+                    'combo_id',
+                    comboId
+                )
+
+        ]);
+
+
+        if (comboResult.error) {
+            throw comboResult.error;
+        }
+
+        if (menuLinksResult.error) {
+            throw menuLinksResult.error;
+        }
+
+        if (extraLinksResult.error) {
+            throw extraLinksResult.error;
+        }
+
+
+        const combo =
+            comboResult.data;
+
+
+        const menuIds =
+            (
+                menuLinksResult.data ||
+                []
+            ).map(
+                row =>
+                    row.menu_item_id
+            );
+
+
+        const extraIds =
+            (
+                extraLinksResult.data ||
+                []
+            ).map(
+                row =>
+                    row.extra_addon_id
+            );
+
+
+        let includedMenuItems = [];
+        let includedExtraAddons = [];
+
+
+        if (menuIds.length > 0) {
+
+            const {
+                data,
+                error
+            } = await supabase
+                .from('menu_items')
+                .select(
+                    'id, name'
+                )
+                .in(
+                    'id',
+                    menuIds
+                );
+
+
+            if (error) {
+                throw error;
+            }
+
+
+            includedMenuItems =
+                data || [];
+        }
+
+
+        if (extraIds.length > 0) {
+
+            const {
+                data,
+                error
+            } = await supabase
+                .from('extra_addons')
+                .select(
+                    'id, name, flavour'
+                )
+                .in(
+                    'id',
+                    extraIds
+                );
+
+
+            if (error) {
+                throw error;
+            }
+
+
+            includedExtraAddons =
+                data || [];
+        }
+
+
+        const cartId =
+            `combo-${combo.id}`;
+
+
+        const existing =
+            cart.findIndex(
+                item =>
+                    item.cart_id ===
+                    cartId
+            );
+
+
+        if (existing > -1) {
+
+            cart[existing].quantity += 1;
+
+        } else {
+
+            cart.push({
+
+                cart_id:
+                    cartId,
+
+                id:
+                    combo.id,
+
+                item_type:
+                    'combo',
+
+                name:
+                    combo.name,
+
+                description:
+                    combo.description,
+
+                price:
+                    Number(
+                        combo.sale_price
+                    ),
+
+                original_price:
+                    Number(
+                        combo.sale_price
+                    ),
+
+                on_sale:
+                    true,
+
+                quantity:
+                    1,
+
+                image_url:
+                    combo.image_url,
+
+                category:
+                    'Combo',
+
+                badge:
+                    'SALE',
+
+                rating:
+                    combo.rating,
+
+                preparation_time:
+                    combo.preparation_time,
+
+                combo_menu_items:
+                    includedMenuItems,
+
+                combo_extra_addons:
+                    includedExtraAddons,
+
+                addons: [],
+
+                selectedAddons: []
+
+            });
+        }
+
+
+        updateCartIcon();
+
+
+        showToast(
+            `${combo.name} added to cart!`
+        );
+
+
+    } catch (error) {
+
+        console.error(
+            'Error adding Combo:',
+            error
+        );
+
+        showToast(
+            'Unable to add Combo Meal',
+            'error'
+        );
+    }
 }
 
 async function addToCart(itemId) {
@@ -8601,18 +16080,44 @@ async function addToCart(itemId) {
             console.log('Increased quantity for existing item:', cart[existingItemIndex]);
         } else {
             const cartItem = {
-                id: menuItem.id,
-                name: menuItem.name,
-                description: menuItem.description,
-                price: parseFloat(menuItem.price),
-                quantity: 1,
-                image_url: menuItem.image_url,
-                category: menuItem.category,
-                badge: menuItem.badge,
-                rating: menuItem.rating,
-                addons: menuItem.menu_item_addons || [],
-                selectedAddons: []
-            };
+
+    id: menuItem.id,
+
+    name: menuItem.name,
+
+    description: menuItem.description,
+
+    price:
+        menuItem.on_sale &&
+        menuItem.sale_price !== null &&
+        Number(menuItem.sale_price) < Number(menuItem.price)
+
+            ? Number(menuItem.sale_price)
+
+            : Number(menuItem.price),
+
+    original_price:
+        Number(menuItem.price),
+
+    on_sale:
+        Boolean(menuItem.on_sale),
+
+    quantity: 1,
+
+    image_url: menuItem.image_url,
+
+    category: menuItem.category,
+
+    badge: menuItem.badge,
+
+    rating: menuItem.rating,
+
+    addons:
+        menuItem.menu_item_addons || [],
+
+    selectedAddons: []
+
+};
             
             cart.push(cartItem);
             console.log('Added new item to cart:', cartItem);
@@ -9015,22 +16520,7 @@ async function showCheckoutPage() {
         const mainContent = document.getElementById('main-content');
         mainContent.innerHTML = `
             <div class="checkout-container">
-                ${!hasProfile ? `
-                    <div class="profile-alert-card">
-                        <div class="profile-alert-content">
-                            <div class="profile-alert-icon">
-                                <i class="fas fa-user-edit"></i>
-                            </div>
-                            <div class="profile-alert-text">
-                                <h4>Complete Your Profile</h4>
-                                <p>Please add your details for faster checkout</p>
-                            </div>
-                        </div>
-                        <button class="complete-profile-btn" id="complete-profile-btn">
-                            Complete
-                        </button>
-                    </div>
-                ` : ''}
+                
                 
                 <div class="order-summary-card">
                     <div class="order-summary-header">
@@ -9114,7 +16604,13 @@ async function showCheckoutPage() {
                             </div>
                             <div class="delivery-fee-badge">
                                 <i class="fas fa-map-marker-alt"></i>
-                                Delivery fee: R${currentShop.delivery_charge_within_2km || 10} (within 2km)
+                            ${
+                                currentShop.free_delivery
+                                    ? 'Free Delivery'
+                                    : `Delivery fee: R${Number(
+                                        currentShop.delivery_charge_within_2km || 0
+                                    ).toFixed(2)} (within 2km)`
+                            }                            
                             </div>
                         </div>
                     </div>
@@ -9157,8 +16653,344 @@ async function showCheckoutPage() {
                             </div>
                         </div>
                     </div>
+                                </div>
+
+
+                <div class="form-section-card">
+
+                    <div class="form-section-header">
+
+                        <i class="fas fa-utensils"></i>
+
+                        <h4>
+                            Food Preferences & Exclusions
+                        </h4>
+
+                    </div>
+
+
+                    <div class="form-section-content">
+
+
+                        ${
+                            cart.some(
+                                item =>
+                                    item.item_type !== 'combo' &&
+                                    item.item_type !== 'extra-addon' &&
+                                    item.addons &&
+                                    item.addons.length > 0
+                            )
+
+                                ? `
+
+                                    <div style="
+                                        margin-bottom: 22px;
+                                    ">
+
+                                        <strong style="
+                                            display: block;
+                                            margin-bottom: 5px;
+                                        ">
+                                            Remove Ingredients
+                                        </strong>
+
+                                        <small style="
+                                            display: block;
+                                            color: #666;
+                                            margin-bottom: 12px;
+                                        ">
+                                            Select anything you do not want
+                                            included in your meal.
+                                        </small>
+
+
+                                        ${cart
+                                            .map(
+                                                (
+                                                    item,
+                                                    cartIndex
+                                                ) => {
+
+                                                    if (
+                                                        item.item_type === 'combo' ||
+                                                        item.item_type === 'extra-addon' ||
+                                                        !item.addons ||
+                                                        item.addons.length === 0
+                                                    ) {
+                                                        return '';
+                                                    }
+
+
+                                                    return `
+
+                                                        <div style="
+                                                            border: 1px solid #eee;
+                                                            border-radius: 10px;
+                                                            padding: 12px;
+                                                            margin-bottom: 10px;
+                                                        ">
+
+                                                            <strong style="
+                                                                display: block;
+                                                                margin-bottom: 9px;
+                                                            ">
+                                                                ${escapeHtml(item.name)}
+                                                            </strong>
+
+
+                                                            <div style="
+                                                                display: flex;
+                                                                flex-wrap: wrap;
+                                                                gap: 8px;
+                                                            ">
+
+                                                                ${item.addons
+                                                                    .map(
+                                                                        addon => `
+
+                                                                            <label style="
+                                                                                display: flex;
+                                                                                align-items: center;
+                                                                                gap: 6px;
+                                                                                border: 1px solid #ddd;
+                                                                                padding: 7px 10px;
+                                                                                border-radius: 20px;
+                                                                                cursor: pointer;
+                                                                                font-size: 0.85rem;
+                                                                            ">
+
+                                                                                <input
+                                                                                    type="checkbox"
+                                                                                    class="checkout-excluded-addon"
+                                                                                    data-cart-index="${cartIndex}"
+                                                                                    data-item-id="${item.id}"
+                                                                                    data-item-name="${escapeHtml(item.name)}"
+                                                                                    value="${escapeHtml(addon.name)}"
+                                                                                >
+
+                                                                                No
+                                                                                ${escapeHtml(addon.name)}
+
+                                                                            </label>
+
+                                                                        `
+                                                                    )
+                                                                    .join('')}
+
+                                                            </div>
+
+                                                        </div>
+                                                    `;
+
+                                                }
+                                            )
+                                            .join('')}
+
+                                    </div>
+
+                                `
+
+                                : ''
+                        }
+
+
+                        <div style="
+                            margin-bottom: 20px;
+                        ">
+
+                            <strong style="
+                                display: block;
+                                margin-bottom: 5px;
+                            ">
+                                Allergies
+                            </strong>
+
+                            <small style="
+                                display: block;
+                                color: #666;
+                                margin-bottom: 10px;
+                            ">
+                                Select any allergies the shop should know about.
+                            </small>
+
+
+                            <div style="
+                                display: flex;
+                                flex-wrap: wrap;
+                                gap: 8px;
+                            ">
+
+                                ${[
+                                    'Wheat / Gluten',
+                                    'Milk / Dairy',
+                                    'Eggs',
+                                    'Soy',
+                                    'Mustard',
+                                    'Sesame Seeds',
+                                    'Peanuts',
+                                    'Tree Nuts',
+                                    'Fish',
+                                    'Shellfish'
+                                ]
+                                    .map(
+                                        option => `
+
+                                            <label style="
+                                                display: flex;
+                                                align-items: center;
+                                                gap: 6px;
+                                                border: 1px solid #ddd;
+                                                padding: 7px 10px;
+                                                border-radius: 20px;
+                                                cursor: pointer;
+                                                font-size: 0.85rem;
+                                            ">
+
+                                                <input
+                                                    type="checkbox"
+                                                    class="checkout-food-preference"
+                                                    value="${option}"
+                                                >
+
+                                                ${option}
+
+                                            </label>
+
+                                        `
+                                    )
+                                    .join('')}
+
+                            </div>
+
+                        </div>
+
+
+                        <div style="
+                            margin-bottom: 20px;
+                        ">
+
+                            <strong style="
+                                display: block;
+                                margin-bottom: 5px;
+                            ">
+                                Dietary & Food Preferences
+                            </strong>
+
+
+                            <div style="
+                                display: flex;
+                                flex-wrap: wrap;
+                                gap: 8px;
+                            ">
+
+                                ${[
+                                    'No Pork',
+                                    'No Beef',
+                                    'No Chicken',
+                                    'No Seafood',
+                                    'Vegetarian',
+                                    'No Dairy',
+                                    'No Peri-Peri',
+                                    'No Chilli / Spicy Food',
+                                    'Mild Only',
+                                    'No Sauce',
+                                    'No Cheese',
+                                    'No Onion',
+                                    'No Tomato',
+                                    'No Mayonnaise',
+                                    'No Cold Ingredients'
+                                ]
+                                    .map(
+                                        option => `
+
+                                            <label style="
+                                                display: flex;
+                                                align-items: center;
+                                                gap: 6px;
+                                                border: 1px solid #ddd;
+                                                padding: 7px 10px;
+                                                border-radius: 20px;
+                                                cursor: pointer;
+                                                font-size: 0.85rem;
+                                            ">
+
+                                                <input
+                                                    type="checkbox"
+                                                    class="checkout-food-preference"
+                                                    value="${option}"
+                                                >
+
+                                                ${option}
+
+                                            </label>
+
+                                        `
+                                    )
+                                    .join('')}
+
+                            </div>
+
+                        </div>
+
+
+                        <div class="form-group">
+
+                            <label class="form-label">
+                                Other Food Instructions
+                            </label>
+
+                            <textarea
+                                class="form-textarea"
+                                id="special-food-instructions"
+                                maxlength="500"
+                                rows="3"
+                                placeholder="e.g. Please make the chips well done, no ice in drink..."
+                            ></textarea>
+
+                        </div>
+
+
+                        <div style="
+                            background: #fff3cd;
+                            border: 1px solid #ffe69c;
+                            color: #664d03;
+                            padding: 12px;
+                            border-radius: 10px;
+                            font-size: 0.82rem;
+                            line-height: 1.5;
+                        ">
+
+                            <i class="fas fa-exclamation-triangle"></i>
+
+                            Allergy information will be sent to the shop.
+                            Customers with serious allergies should still
+                            confirm directly with the shop before consuming
+                            the food.
+
+                        </div>
+
+                        ${!hasProfile ? `
+                    <div class="profile-alert-card">
+                        <div class="profile-alert-content">
+                            <div class="profile-alert-icon">
+                                <i class="fas fa-user-edit"></i>
+                            </div>
+                            <div class="profile-alert-text">
+                                <h4>Complete Your Profile First <i class="fas fa-exclamation-triangle"></i></h4>
+                                <p>Update your Profile to proceed to checkout</p>
+                            </div>
+                        </div>
+                        <button class="complete-profile-btn" id="complete-profile-btn">
+                            Update
+                        </button>
+                    </div>
+                ` : ''}
+
+                    </div>
+
                 </div>
-                
+
+
                 <div class="checkout-actions">
                     <button class="btn-primary" id="checkout-btn" ${!hasProfile ? 'disabled' : ''}>
                         <i class="fas fa-check-circle"></i>
@@ -9533,38 +17365,181 @@ async function submitOrder(profile, hasProfileFromCheckout) {
         }
     }
 
-let totalAmount = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    const foodPreferences =
+    Array.from(
+        document.querySelectorAll(
+            '.checkout-food-preference:checked'
+        )
+    ).map(
+        checkbox =>
+            checkbox.value
+    );
 
-if (collectionMethod === 'delivery' && currentShop.delivery_charge_within_2km) {
-    totalAmount += parseFloat(currentShop.delivery_charge_within_2km);
+
+const excludedAddons =
+    Array.from(
+        document.querySelectorAll(
+            '.checkout-excluded-addon:checked'
+        )
+    ).map(
+        checkbox => ({
+
+            cart_index:
+                Number(
+                    checkbox.dataset.cartIndex
+                ),
+
+            item_id:
+                Number(
+                    checkbox.dataset.itemId
+                ),
+
+            item_name:
+                checkbox.dataset.itemName,
+
+            addon_name:
+                checkbox.value
+
+        })
+    );
+
+
+const specialFoodInstructions =
+    document
+        .getElementById(
+            'special-food-instructions'
+        )
+        ?.value
+        .trim() || '';
+
+let totalAmount =
+    cart.reduce(
+        (sum, item) =>
+            sum +
+            (
+                item.price *
+                item.quantity
+            ),
+        0
+    );
+
+
+if (
+    collectionMethod === 'delivery' &&
+    !currentShop.free_delivery
+) {
+
+    totalAmount +=
+        Number(
+            currentShop
+                .delivery_charge_within_2km ||
+            0
+        );
 }
     
     try {
         const orderNumber = await generateOrderNumber(currentShop.id, 'online');
-        
-        const totalAmount = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-        
+                
         const nowSAST = getSouthAfricaTime();
         
         const orderData = {
-            shop_id: currentShop.id,
-            customer_email: currentUser.email,
-            order_number: orderNumber,
-            order_type: 'online',
-            total_amount: totalAmount,
-            collection_method: collectionMethod,
-            payment_method: paymentMethod,
-            order_schedule: orderSchedule,
-            status: 'waiting',
-            items: cart.map(item => ({
-                id: item.id,
-                name: item.name,
-                price: item.price,
-                quantity: item.quantity,
-                addons: item.selectedAddons || []
-            })),
-            created_at: nowSAST.toISOString()
-        };
+
+    shop_id:
+        currentShop.id,
+
+    customer_email:
+        currentUser.email,
+
+    order_number:
+        orderNumber,
+
+    order_type:
+        'online',
+
+    total_amount:
+        totalAmount,
+
+    collection_method:
+        collectionMethod,
+
+    payment_method:
+        paymentMethod,
+
+    order_schedule:
+        orderSchedule,
+
+    status:
+        'waiting',
+
+    food_preferences:
+        foodPreferences,
+
+    excluded_addons:
+        excludedAddons,
+
+    special_food_instructions:
+        specialFoodInstructions || null,
+
+    items:
+        cart.map(
+            (
+                item,
+                cartIndex
+            ) => {
+
+                const itemExcludedAddons =
+                    excludedAddons
+                        .filter(
+                            excluded =>
+                                excluded.cart_index ===
+                                cartIndex
+                        )
+                        .map(
+                            excluded =>
+                                excluded.addon_name
+                        );
+
+
+                return {
+
+                    id:
+                        item.id,
+
+                    item_type:
+                        item.item_type ||
+                        'menu',
+
+                    name:
+                        item.name,
+
+                    price:
+                        item.price,
+
+                    quantity:
+                        item.quantity,
+
+                    excluded_addons:
+                        itemExcludedAddons,
+
+                    combo_menu_items:
+                        item.combo_menu_items ||
+                        [],
+
+                    combo_extra_addons:
+                        item.combo_extra_addons ||
+                        [],
+
+                    flavour:
+                        item.flavour ||
+                        null
+
+                };
+            }
+        ),
+
+    created_at:
+        nowSAST.toISOString()
+};
         
         if (scheduledTime) {
             orderData.scheduled_time = scheduledTime;
@@ -9615,11 +17590,10 @@ function showOrderConfirmation(order, deliveryCharge = 0) {
         <style>
             .confirmation-container {
                 display: flex;
+                margin-top: 25px;
                 align-items: center;
                 justify-content: center;
                 min-height: calc(100vh - 140px);
-                padding: 20px;
-                margin-top: 70px;
                 margin-bottom: 80px;
                 animation: fadeInConfirm 0.5s ease;
             }
@@ -9636,14 +17610,9 @@ function showOrderConfirmation(order, deliveryCharge = 0) {
             }
             
             .confirmation-card {
-                background: white;
-                border-radius: 40px;
-                padding: 40px 32px;
-                max-width: 480px;
+         
                 width: 100%;
                 text-align: center;
-                box-shadow: 0 20px 40px rgba(0, 0, 0, 0.08);
-                border: 1px solid #f0f0f0;
                 position: relative;
                 overflow: hidden;
             }
@@ -9655,24 +17624,12 @@ function showOrderConfirmation(order, deliveryCharge = 0) {
                 left: 0;
                 right: 0;
                 height: 6px;
-                background: linear-gradient(90deg, var(--primary), var(--secondary));
             }
             
             .success-animation {
                 margin-bottom: 24px;
             }
-            
-            .checkmark-circle {
-                width: 100px;
-                height: 100px;
-                background: linear-gradient(135deg, #e8f5e9, #c8e6c9);
-                border-radius: 50%;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                margin: 0 auto;
-                animation: pulseSuccess 0.5s ease-out;
-            }
+        
             
             @keyframes pulseSuccess {
                 0% {
@@ -9836,7 +17793,6 @@ function showOrderConfirmation(order, deliveryCharge = 0) {
             
             .btn-view-orders:hover {
                 transform: translateY(-2px);
-                box-shadow: 0 8px 20px rgba(255, 123, 49, 0.3);
             }
             
             .btn-continue-shopping-confirm {
@@ -9883,12 +17839,7 @@ function showOrderConfirmation(order, deliveryCharge = 0) {
                 padding: 8px 12px;
                 border-radius: 30px;
             }
-            
-            .share-btn:hover {
-                background: #f1f5f9;
-                color: var(--primary);
-            }
-            
+
             .share-btn i {
                 font-size: 16px;
             }
@@ -9924,13 +17875,11 @@ function showOrderConfirmation(order, deliveryCharge = 0) {
         <div class="confirmation-container">
             <div class="confirmation-card">
                 <div class="success-animation">
-                    <div class="checkmark-circle">
-                        <i class="fas fa-check-circle"></i>
-                    </div>
+
                 </div>
                 
-                <h2>Order Placed!</h2>
-                <p>Your order has been received and is being processed</p>
+                <h2></h2>
+                <p></p>
                 
                 <div class="order-details-card">
                     <div class="order-number-section">
@@ -10002,16 +17951,6 @@ function showOrderConfirmation(order, deliveryCharge = 0) {
                     </button>
                 </div>
                 
-                <div class="share-section">
-                    <button class="share-btn" id="share-order-btn">
-                        <i class="fas fa-share-alt"></i>
-                        Share Order
-                    </button>
-                    <button class="share-btn" id="save-order-btn">
-                        <i class="fas fa-download"></i>
-                        Save Receipt
-                    </button>
-                </div>
             </div>
         </div>
     `;
@@ -10028,51 +17967,6 @@ function showOrderConfirmation(order, deliveryCharge = 0) {
 
         document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
         document.querySelector('.nav-item[data-page="home"]').classList.add('active');
-    });
-    
-    document.getElementById('share-order-btn').addEventListener('click', () => {
-
-        const shareText = `Order #${order.order_number} placed with Fasfood! Total: R${parseFloat(order.total_amount).toFixed(2)}`;
-        if (navigator.share) {
-            navigator.share({
-                title: 'Order Confirmation',
-                text: shareText,
-                url: window.location.href
-            }).catch(() => {
-                copyToClipboard(shareText);
-                showToast('Order details copied to clipboard!');
-            });
-        } else {
-            copyToClipboard(shareText);
-            showToast('Order details copied to clipboard!');
-        }
-    });
-    
-    document.getElementById('save-order-btn').addEventListener('click', () => {
-
-        const receipt = `
-        === FASFOOD ORDER RECEIPT ===
-        Order Number: ${order.order_number}
-        Date: ${formatSATime(new Date(order.created_at))}
-        ${deliveryCharge > 0 ? `Delivery Fee: R${deliveryCharge.toFixed(2)}` : ''}
-        Total Amount: R${parseFloat(order.total_amount).toFixed(2)}
-        Collection: ${order.collection_method}
-        Payment: ${order.payment_method === 'cash' ? 'Cash' : 'Bank Card'}
-        Status: ${order.status}
-        ${order.order_schedule === 'later' ? `Scheduled: ${formatSATime(new Date(order.scheduled_time))}` : ''}
-        Thank you for ordering with Fasfood!
-        `;
-        
-        const blob = new Blob([receipt], { type: 'text/plain' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `order_${order.order_number}.txt`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        showToast('Receipt downloaded!');
     });
     
     window.scrollTo(0, 0);
@@ -10144,7 +18038,6 @@ async function showOrdersPage() {
                         width: 100%;
                         text-align: center;
                         border: 1px solid #f0f0f0;
-                        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
                     }
                     
                     .empty-icon {
@@ -10194,7 +18087,6 @@ async function showOrdersPage() {
                     
                     .start-ordering-btn:hover {
                         transform: translateY(-2px);
-                        box-shadow: 0 8px 20px rgba(255, 123, 49, 0.25);
                     }
                     
                     .order-stats {
@@ -10359,7 +18251,6 @@ async function showOrdersPage() {
                     
                     .order-card:hover {
                         transform: translateY(-2px);
-                        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
                     }
                     
                     .order-header {
@@ -10858,7 +18749,6 @@ function showToast(message, type = 'success') {
         color: white;
         padding: 12px 20px;
         border-radius: 5px;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.2);
         z-index: 10000;
         max-width: 300px;
         word-wrap: break-word;
@@ -10867,7 +18757,7 @@ function showToast(message, type = 'success') {
     
     document.body.appendChild(toast);
     
-    setTimeout(() => {
+   setTimeout(() => {
         toast.remove();
     }, 3000);
 }
@@ -10891,7 +18781,7 @@ async function loadShopAdminOrders() {
             <h2>Order Management</h2>
             <div class="orders-management" id="shop-orders-list">
                 ${orders && orders.length > 0 ? orders.map(order => `
-                    <div class="order-item-admin" style="background: white; padding: 20px; border-radius: 10px; margin-bottom: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
+                    <div class="order-item-admin" style="background: white; padding: 20px; border-radius: 10px; margin-bottom: 15px; ">
                         <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 15px;">
                             <div>
                                 <h3 style="margin: 0 0 5px 0;">Order #${order.order_number}</h3>
@@ -11107,11 +18997,11 @@ async function showUserProfile() {
             background: white;
             border-radius: 28px;
             overflow: hidden;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
             border: 1px solid #f0f0f0;
         }
         
         .profile-header {
+            display: none;
             background: linear-gradient(135deg, var(--primary), var(--secondary));
             padding: 32px 24px;
             text-align: center;
@@ -11127,8 +19017,6 @@ async function showUserProfile() {
             align-items: center;
             justify-content: center;
             margin: 0 auto 16px;
-            border: 4px solid rgba(255, 255, 255, 0.4);
-            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
             position: relative;
             z-index: 2;
         }
@@ -11238,7 +19126,6 @@ async function showUserProfile() {
         .form-input-profile:focus {
             outline: none;
             border-color: var(--primary);
-            box-shadow: 0 0 0 3px rgba(255, 123, 49, 0.08);
         }
         
         .form-input-profile[readonly] {
@@ -11262,7 +19149,6 @@ async function showUserProfile() {
         .form-textarea-profile:focus {
             outline: none;
             border-color: var(--primary);
-            box-shadow: 0 0 0 3px rgba(255, 123, 49, 0.08);
         }
         
         .input-hint {
@@ -11322,7 +19208,6 @@ async function showUserProfile() {
         .shop-switch-item:hover {
             transform: translateY(-1px);
             border-color: var(--primary);
-            box-shadow: 0 4px 12px rgba(255, 123, 49, 0.1);
         }
         
         .shop-switch-item.active {
@@ -11377,7 +19262,6 @@ async function showUserProfile() {
         
         .btn-save-profile:hover {
             transform: translateY(-1px);
-            box-shadow: 0 6px 16px rgba(255, 123, 49, 0.25);
         }
         
         .btn-back-profile {
@@ -13587,42 +21471,53 @@ async function enableShopPushNotifications() {
 window.enableShopPushNotifications =
 enableShopPushNotifications;
 
-function unlockNewOrderAudio() {
+let newOrderAudioUnlocked = false;
+
+async function unlockNewOrderAudio() {
+
+    if (newOrderAudioUnlocked) {
+        return;
+    }
 
     const audio =
         document.getElementById(
             'new-order-alert'
         );
 
-    if (!audio) return;
+    if (!audio) {
+        console.error(
+            'new-order-alert audio element not found'
+        );
+        return;
+    }
 
-    audio.volume = 1;
+    try {
 
-    audio.play()
-        .then(() => {
+        audio.volume = 0;
 
-            audio.pause();
-            audio.currentTime = 0;
+        await audio.play();
 
-            console.log(
-                'New order audio unlocked'
-            );
+        audio.pause();
+        audio.currentTime = 0;
+        audio.volume = 1;
 
-        })
-        .catch(error => {
+        newOrderAudioUnlocked = true;
 
-            console.log(
-                'Audio unlock waiting for user interaction:',
-                error
-            );
-        });
+        console.log(
+            '✅ New order sound unlocked'
+        );
+
+    } catch (error) {
+
+        console.error(
+            'Unable to unlock order sound:',
+            error
+        );
+    }
 }
 
 
 document.addEventListener(
     'click',
-    unlockNewOrderAudio,
-    {
-        once: true
-    }
+    unlockNewOrderAudio
 );

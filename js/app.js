@@ -787,77 +787,57 @@ function showNewOrderNotification(
             }
 
             .hero {
-            margin-top: 20px;
-            display: flex;
-            justify-content: center;
-        }
-        
-        .hero-image-wrapper {
-            position: relative;
-            width: 320px;
-            height: 320px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        
-        .hero-image-loader {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            gap: 12px;
-            transition: opacity 0.4s ease, visibility 0.4s ease;
-            z-index: 1;
-        }
-        
-        .hero-image-loader.hidden {
-            opacity: 0;
-            visibility: hidden;
-        }
-        
-        .loader-spinner {
-            width: 48px;
-            height: 48px;
-            border: 4px solid rgba(229, 122, 47, 0.2);
-            border-top-color: #e57a2f;
-            border-radius: 50%;
-            animation: spinLoader 0.8s linear infinite;
-        }
-        
-        .loader-text {
-            color: #e57a2f;
-            font-size: 13px;
-            font-weight: 500;
-            letter-spacing: 0.5px;
-            opacity: 0.8;
-        }
-        
-        @keyframes spinLoader {
-            to {
-                transform: rotate(360deg);
-            }
-        }
-        
-        .hero img,
-        .hero-image {
-            width: 320px;
-            max-width: 100%;
-            transition: opacity 0.4s ease;
-        }
-        
-        .hero-image-loading {
-            opacity: 0;
-        }
-        
-        .hero-image-loaded {
-            opacity: 1;
-        }
+    margin-top: 20px;
+    display: flex;
+    justify-content: center;
+}
+
+.hero-image-wrapper {
+    position: relative;
+    width: 320px;
+    height: 320px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.hero-image-wrapper img {
+    width: 320px;
+    max-width: 100%;
+    opacity: 0;
+    transition: opacity 0.4s ease;
+    position: relative;
+    z-index: 2;
+}
+
+.hero-image-wrapper img.loaded {
+    opacity: 1;
+}
+
+.hero-image-wrapper img.loaded + .hero-image-loader,
+.hero-image-wrapper img.loaded ~ .hero-image-loader {
+    opacity: 0;
+    visibility: hidden;
+}
+
+.hero-image-loader {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 44px;
+    height: 44px;
+    border: 4px solid rgba(229, 122, 47, 0.2);
+    border-top-color: #e57a2f;
+    border-radius: 50%;
+    animation: spinLoader 0.8s linear infinite;
+    transition: opacity 0.4s ease, visibility 0.4s ease;
+    z-index: 1;
+}
+
+@keyframes spinLoader {
+    to { transform: translate(-50%, -50%) rotate(360deg); }
+}
         </style>
         
         <div class="phone-container">
@@ -865,19 +845,9 @@ function showNewOrderNotification(
                 <div class="content">
 
                     <div class="hero">
-                            <div class="hero-image-wrapper" id="hero-image-wrapper">
-                                <div class="hero-image-loader" id="hero-image-loader">
-                                    <div class="loader-spinner"></div>
-                                    <div class="loader-text">Loading...</div>
-                                </div>
-                                <img 
-                                    src="assets/images/box-image.png" 
-                                    alt="fasfood takeaway" 
-                                    id="hero-image"
-                                    class="hero-image-loading"
-                                    onload="handleHeroImageLoad(this)"
-                                    onerror="handleHeroImageError(this)"
-                                >
+                            <div class="hero-image-wrapper">
+                                <div class="hero-image-loader"></div>
+                                <img src="assets/images/box-image.png" alt="fasfood takeaway">
                             </div>
                         </div>
                     
@@ -914,28 +884,29 @@ function showNewOrderNotification(
     
     document.getElementById('dev-admin-dashboard').classList.remove('active');
     document.getElementById('shop-admin-dashboard').classList.remove('active');
+
+        wireHeroImageLoader();
 }
 
-function handleHeroImageLoad(imgElement) {
-    imgElement.classList.remove('hero-image-loading');
-    imgElement.classList.add('hero-image-loaded');
-    
-    const loader = document.getElementById('hero-image-loader');
-    if (loader) {
-        loader.classList.add('hidden');
-        // Remove from DOM after the fade transition completes
-        setTimeout(() => loader.remove(), 500);
-    }
-}
+function wireHeroImageLoader() {
+    const img = document.querySelector('.hero-image-wrapper img');
+    const loader = document.querySelector('.hero-image-loader');
+    if (!img || !loader) return;
 
-function handleHeroImageError(imgElement) {
-    const loader = document.getElementById('hero-image-loader');
-    if (loader) {
-        loader.innerHTML = `
-            <i class="fas fa-image" style="font-size: 40px; color: #ccc;"></i>
-            <div class="loader-text" style="color: #999;">Image unavailable</div>
-        `;
+    // If already cached/complete, mark loaded immediately
+    if (img.complete && img.naturalWidth > 0) {
+        img.classList.add('loaded');
+        return;
     }
+
+    img.addEventListener('load', () => {
+        img.classList.add('loaded');
+    }, { once: true });
+
+    img.addEventListener('error', () => {
+        loader.style.display = 'none';
+        img.style.opacity = '1'; // show broken image icon
+    }, { once: true });
 }
 
         function showNotRegisteredMessage() {

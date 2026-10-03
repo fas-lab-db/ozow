@@ -785,6 +785,79 @@ function showNewOrderNotification(
             .google-button:hover {
                 background-color: #3367d6;
             }
+
+            .hero {
+            margin-top: 20px;
+            display: flex;
+            justify-content: center;
+        }
+        
+        .hero-image-wrapper {
+            position: relative;
+            width: 320px;
+            height: 320px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .hero-image-loader {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            transition: opacity 0.4s ease, visibility 0.4s ease;
+            z-index: 1;
+        }
+        
+        .hero-image-loader.hidden {
+            opacity: 0;
+            visibility: hidden;
+        }
+        
+        .loader-spinner {
+            width: 48px;
+            height: 48px;
+            border: 4px solid rgba(229, 122, 47, 0.2);
+            border-top-color: #e57a2f;
+            border-radius: 50%;
+            animation: spinLoader 0.8s linear infinite;
+        }
+        
+        .loader-text {
+            color: #e57a2f;
+            font-size: 13px;
+            font-weight: 500;
+            letter-spacing: 0.5px;
+            opacity: 0.8;
+        }
+        
+        @keyframes spinLoader {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+        
+        .hero img,
+        .hero-image {
+            width: 320px;
+            max-width: 100%;
+            transition: opacity 0.4s ease;
+        }
+        
+        .hero-image-loading {
+            opacity: 0;
+        }
+        
+        .hero-image-loaded {
+            opacity: 1;
+        }
         </style>
         
         <div class="phone-container">
@@ -792,8 +865,21 @@ function showNewOrderNotification(
                 <div class="content">
 
                     <div class="hero">
-                        <img src="assets/images/box-image.png" alt="fasfood takeaway">
-                    </div>
+                            <div class="hero-image-wrapper" id="hero-image-wrapper">
+                                <div class="hero-image-loader" id="hero-image-loader">
+                                    <div class="loader-spinner"></div>
+                                    <div class="loader-text">Loading...</div>
+                                </div>
+                                <img 
+                                    src="assets/images/box-image.png" 
+                                    alt="fasfood takeaway" 
+                                    id="hero-image"
+                                    class="hero-image-loading"
+                                    onload="handleHeroImageLoad(this)"
+                                    onerror="handleHeroImageError(this)"
+                                >
+                            </div>
+                        </div>
                     
                     <div class="text">
                         <h2>Enjoy Instant <span>Delivery</span> <br> <span>and delicious</span> Food</h2>
@@ -828,6 +914,28 @@ function showNewOrderNotification(
     
     document.getElementById('dev-admin-dashboard').classList.remove('active');
     document.getElementById('shop-admin-dashboard').classList.remove('active');
+}
+
+function handleHeroImageLoad(imgElement) {
+    imgElement.classList.remove('hero-image-loading');
+    imgElement.classList.add('hero-image-loaded');
+    
+    const loader = document.getElementById('hero-image-loader');
+    if (loader) {
+        loader.classList.add('hidden');
+        // Remove from DOM after the fade transition completes
+        setTimeout(() => loader.remove(), 500);
+    }
+}
+
+function handleHeroImageError(imgElement) {
+    const loader = document.getElementById('hero-image-loader');
+    if (loader) {
+        loader.innerHTML = `
+            <i class="fas fa-image" style="font-size: 40px; color: #ccc;"></i>
+            <div class="loader-text" style="color: #999;">Image unavailable</div>
+        `;
+    }
 }
 
         function showNotRegisteredMessage() {

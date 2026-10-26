@@ -1875,6 +1875,7 @@ if (categoriesContainer) {
 setTimeout(() => {
 
     showAdvertsToCustomer();
+         loadActiveShopAdverts();
 
 }, 1000);
 

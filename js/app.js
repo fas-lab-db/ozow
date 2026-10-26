@@ -1435,7 +1435,7 @@ const comboMeals =
         <div class="search-container" style="padding: 0 16px 16px 16px; margin-top: 10px; margin-bottom:-10px;">
             <div class="search-box" style="position: relative;">
                 <i class="fas fa-search" style="position: absolute; left: 15px; top: 50%; transform: translateY(-50%); color: #999; font-size: 16px;"></i>
-                <input type="text" id="menu-search-input" placeholder="Search for food items..." 
+                <input type="text" id="menu-search-input" placeholder="Search for food menu..." 
                     style="width: 100%; padding: 14px 15px 14px 45px; border: 1px solid #e0e0e0; border-radius: 50px; font-size: 14px; background: white; outline: none; transition: all 0.3s ease;">
                 <button id="clear-search-btn" style="position: absolute; right: 15px; top: 50%; transform: translateY(-50%); background: none; border: none; color: #999; cursor: pointer; display: none;">
                     <i class="fas fa-times-circle"></i>

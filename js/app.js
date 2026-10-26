@@ -1381,6 +1381,7 @@ const comboMeals =
                 background: white;
                 border-radius: 20px;
                 margin-bottom: 16px;
+                border: 1px solid rgba(255, 123, 49, 0.2);
             }
 
             .location-icon {
